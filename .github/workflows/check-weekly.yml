@@ -1,0 +1,82 @@
+name: Check Weekly Winning
+
+on:
+  schedule:
+    # GitHub Actions cron is UTC.
+    # Thursday 22:00 KST -> 13:00 UTC
+    - cron: "0 13 * * 4"
+    # Saturday 22:00 KST -> 13:00 UTC
+    - cron: "0 13 * * 6"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Check target lottery code"
+        required: true
+        default: "LO40"
+        type: choice
+        options:
+          - LO40
+          - LP72
+
+jobs:
+  check-lp72:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'LP72' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 4'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Check LP72 weekly winning
+        run: pnpm run check:weekly
+        env:
+          CHECK_TARGET: "LP72"
+          LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
+          LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
+
+  check-lo40:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'LO40' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 6'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Check LO40 weekly winning
+        run: pnpm run check:weekly
+        env:
+          CHECK_TARGET: "LO40"
+          LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
+          LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}

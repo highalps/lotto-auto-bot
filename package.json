@@ -1,0 +1,27 @@
+{
+  "name": "lotto-auto-bot",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "buy": "tsx src/index.ts",
+    "check:weekly": "tsx src/check-weekly.ts",
+    "start": "node dist/index.js",
+    "check": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "playwright": "^1.58.2"
+  }
+}

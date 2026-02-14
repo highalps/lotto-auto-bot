@@ -1,0 +1,41 @@
+name: Buy Lotto
+
+on:
+  schedule:
+    # GitHub Actions cron is UTC. 04:00 UTC = 13:00 KST (Saturday).
+    - cron: "0 4 * * 6"
+  workflow_dispatch:
+
+jobs:
+  buy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Buy lotto
+        run: pnpm run buy
+        env:
+          LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
+          LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
+          LOTTO_BUY_MODE: ${{ vars.LOTTO_BUY_MODE || 'LOTTO_ONLY' }}
+          LOTTO_COUNT: ${{ vars.LOTTO_COUNT || '5' }}
+          PENSION_COUNT: ${{ vars.PENSION_COUNT || '1' }}
+          PLAYWRIGHT_HEADLESS: "true"
