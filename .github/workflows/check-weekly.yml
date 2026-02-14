@@ -18,6 +18,10 @@ on:
           - lotto365
           - pension
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   check-pension:
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'pension' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 4'
@@ -44,12 +48,35 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Check Pension weekly winning
+        id: check_weekly
         run: pnpm run check:weekly
         env:
           CHECK_TARGET: "pension"
+          CHECK_RESULT_PATH: "./check-weekly-result-pension.json"
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
           LOTTO_DEBUG_AUTH: "true"
+
+      - name: Export pension check outputs
+        id: check_result
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'); const p='./check-weekly-result-pension.json'; const data=JSON.parse(fs.readFileSync(p,'utf8')); const lines=[]; lines.push('won_count=' + Number(data.wonCount ?? 0)); lines.push('best_rank=' + (data.bestRank ?? '')); lines.push('issue_title=연금복권 ' + (data.bestRank ?? '?') + '등에 당첨 되었습니다.'); lines.push('issue_body<<EOF'); lines.push(String(data.summaryMarkdown ?? '자세한 내용')); lines.push('EOF'); fs.appendFileSync(process.env.GITHUB_OUTPUT, lines.join('\n') + '\n');"
+
+      - name: Create pension winning issue
+        if: github.event_name == 'schedule' && steps.check_result.outputs.won_count != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: process.env.ISSUE_TITLE,
+              body: process.env.ISSUE_BODY
+            });
+        env:
+          ISSUE_TITLE: ${{ steps.check_result.outputs.issue_title }}
+          ISSUE_BODY: ${{ steps.check_result.outputs.issue_body }}
 
   check-lotto365:
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'lotto365' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 6'
@@ -76,9 +103,32 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Check Lotto365 weekly winning
+        id: check_weekly
         run: pnpm run check:weekly
         env:
           CHECK_TARGET: "lotto365"
+          CHECK_RESULT_PATH: "./check-weekly-result-lotto365.json"
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
           LOTTO_DEBUG_AUTH: "true"
+
+      - name: Export lotto365 check outputs
+        id: check_result
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'); const p='./check-weekly-result-lotto365.json'; const data=JSON.parse(fs.readFileSync(p,'utf8')); const lines=[]; lines.push('won_count=' + Number(data.wonCount ?? 0)); lines.push('best_rank=' + (data.bestRank ?? '')); lines.push('issue_title=Lotto365 ' + (data.bestRank ?? '?') + '등에 당첨 되었습니다.'); lines.push('issue_body<<EOF'); lines.push(String(data.summaryMarkdown ?? '자세한 내용')); lines.push('EOF'); fs.appendFileSync(process.env.GITHUB_OUTPUT, lines.join('\n') + '\n');"
+
+      - name: Create lotto365 winning issue
+        if: github.event_name == 'schedule' && steps.check_result.outputs.won_count != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: process.env.ISSUE_TITLE,
+              body: process.env.ISSUE_BODY
+            });
+        env:
+          ISSUE_TITLE: ${{ steps.check_result.outputs.issue_title }}
+          ISSUE_BODY: ${{ steps.check_result.outputs.issue_body }}

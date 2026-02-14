@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { appendFile } from "node:fs/promises";
+import { appendFile, writeFile } from "node:fs/promises";
 import { chromium } from "playwright";
 import { loginToDhlottery } from "./lotto/auth.js";
 import { selectMyLotteryledger, type LedgerItem } from "./lotto/ledger.js";
@@ -72,6 +72,31 @@ function parseAmount(value: number | null | undefined): number {
     return 0;
   }
   return Number(value);
+}
+
+function parseRank(value: unknown): number | null {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  const rank = Number(value);
+  if (!Number.isInteger(rank) || rank < 1) {
+    return null;
+  }
+  return rank;
+}
+
+function getBestRank(wonList: LedgerItem[]): number | null {
+  let bestRank: number | null = null;
+  for (const item of wonList) {
+    const rank = parseRank(item.wnRnk);
+    if (rank === null) {
+      continue;
+    }
+    if (bestRank === null || rank < bestRank) {
+      bestRank = rank;
+    }
+  }
+  return bestRank;
 }
 
 function errorMessage(error: unknown): string {
@@ -153,6 +178,14 @@ async function writeGithubSummary(markdown: string): Promise<void> {
   await appendFile(summaryPath, `${markdown}\n`, "utf8");
 }
 
+async function writeCheckResultFile(payload: unknown): Promise<void> {
+  const resultPath = process.env.CHECK_RESULT_PATH?.trim();
+  if (!resultPath) {
+    return;
+  }
+  await writeFile(resultPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
 async function main(): Promise<void> {
   const userId = process.env.LOTTO_USER_ID?.trim();
   const userPassword = process.env.LOTTO_USER_PASSWORD?.trim();
@@ -188,6 +221,7 @@ async function main(): Promise<void> {
     const wonList = list.filter((item) => item.ltWnResult === "당첨");
     const unresolvedList = list.filter((item) => item.ltWnResult === "미추첨" || item.ltWnResult === "미확인");
     const totalWinAmount = wonList.reduce((sum, item) => sum + parseAmount(item.ltWnAmt), 0);
+    const bestRank = getBestRank(wonList);
 
     const output = {
       success: true,
@@ -197,20 +231,22 @@ async function main(): Promise<void> {
       purchasedCount: list.length,
       wonCount: wonList.length,
       unresolvedCount: unresolvedList.length,
-      totalWinAmount
+      totalWinAmount,
+      bestRank,
+      summaryMarkdown: buildSummaryMarkdown({
+        target,
+        fromYmd,
+        toYmd,
+        list,
+        wonList,
+        unresolvedList,
+        totalWinAmount
+      })
     };
     console.log(JSON.stringify(output, null, 2));
+    await writeCheckResultFile(output);
 
-    const summary = buildSummaryMarkdown({
-      target,
-      fromYmd,
-      toYmd,
-      list,
-      wonList,
-      unresolvedList,
-      totalWinAmount
-    });
-    await writeGithubSummary(summary);
+    await writeGithubSummary(output.summaryMarkdown);
   } finally {
     await context.close();
     await browser.close();
