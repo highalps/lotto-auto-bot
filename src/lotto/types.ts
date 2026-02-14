@@ -1,6 +1,7 @@
 export type LoginOptions = {
   userId: string;
   userPassword: string;
+  validateWithBalance?: boolean;
 };
 
 export type BuyLottoOptions = {

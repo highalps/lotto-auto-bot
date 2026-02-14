@@ -1,6 +1,16 @@
 import type { BrowserContext } from "playwright";
 import { baseUrl, userAgent } from "./constants.js";
 
+function isDebugAuthEnabled(): boolean {
+  return process.env.LOTTO_DEBUG_AUTH?.toLowerCase() === "true";
+}
+
+function logLedgerDebug(message: string): void {
+  if (isDebugAuthEnabled()) {
+    console.log(`[ledger-debug] ${message}`);
+  }
+}
+
 export type LedgerItem = {
   eltOrdrDt: string;
   ltGdsCd: string;
@@ -56,12 +66,23 @@ export async function selectMyLotteryledger(
       AJAX: "true"
     }
   });
+  logLedgerDebug(`request target=${options.ltGdsCd} range=${options.fromYmd}-${options.toYmd} status=${response.status()}`);
 
   if (!response.ok()) {
+    if (response.status() === 401) {
+      if (isDebugAuthEnabled()) {
+        const cookieNames = (await context.cookies()).map((cookie) => cookie.name);
+        logLedgerDebug(`401 cookie-names=${cookieNames.length > 0 ? cookieNames.join(",") : "none"}`);
+      }
+      throw new Error(
+        "Ledger check unauthorized (401). 로그인 세션이 만들어지지 않았거나, 실행 환경 접근이 차단된 상태일 수 있습니다."
+      );
+    }
     throw new Error(`selectMyLotteryledger request failed. status=${response.status()}`);
   }
 
   const payload = (await response.json()) as LedgerResponse;
+
   return {
     total: payload.data?.total ?? 0,
     list: payload.data?.list ?? []

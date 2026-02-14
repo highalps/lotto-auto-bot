@@ -1,7 +1,6 @@
 # lotto-auto-bot
 
 동행복권 자동 구매/주간 당첨 확인 봇입니다.  
-해당 코드는 Codex를 이용해 작성되었습니다.
 
 ## 1) GitHub Actions로만 사용하는 방법 (권장)
 
@@ -43,8 +42,8 @@
 
 - 구매: 매주 토요일 13:00 KST (`.github/workflows/buy-lotto.yml`)
 - 주간 당첨 체크:
-- 연금복권(LP72): 매주 목요일 22:00 KST
-- 로또6/45(LO40): 매주 토요일 22:00 KST
+- 연금복권(pension): 매주 목요일 22:00 KST
+- 로또6/45(lotto365): 매주 토요일 22:00 KST
 - 워크플로우 파일: `.github/workflows/check-weekly.yml`
 
 ## 2) Actions Summary에서 보이는 상태값
@@ -118,8 +117,9 @@ PLAYWRIGHT_HEADLESS=true
 PLAYWRIGHT_STORAGE_STATE_PATH=.auth/storage-state.json
 
 # 주간 체크 대상
-# LO40 | LP72
-CHECK_TARGET=LO40
+# lotto365 | pension
+# legacy aliases: LO40 | LP72
+CHECK_TARGET=lotto365
 
 # 선택: 기간 강제 지정(YYYYMMDD)
 # CHECK_FROM_YMD=20260208

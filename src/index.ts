@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 import { getUserBalance, loginToDhlottery } from "./lotto/auth.js";
 import { buyLotto645Auto } from "./lotto/lotto645.js";
 import { buyPension720Auto } from "./lotto/pension720.js";
-import { userAgent } from "./lotto/constants.js";
+import { browserFingerprint, userAgent } from "./lotto/constants.js";
 
 type BuyMode = "STOP" | "LOTTO_ONLY" | "PENSION_ONLY" | "BOTH";
 
@@ -93,7 +93,14 @@ async function main(): Promise<void> {
   const headless = readBooleanEnv(process.env.PLAYWRIGHT_HEADLESS, true);
   const storageStatePath = process.env.PLAYWRIGHT_STORAGE_STATE_PATH ?? ".auth/storage-state.json";
   const browser = await chromium.launch({ headless });
-  const context = await browser.newContext({ userAgent });
+  const context = await browser.newContext({
+    userAgent,
+    locale: browserFingerprint.locale,
+    timezoneId: browserFingerprint.timezoneId,
+    viewport: browserFingerprint.viewport,
+    deviceScaleFactor: browserFingerprint.deviceScaleFactor,
+    extraHTTPHeaders: browserFingerprint.extraHTTPHeaders
+  });
 
   try {
     if (buyMode === "STOP") {

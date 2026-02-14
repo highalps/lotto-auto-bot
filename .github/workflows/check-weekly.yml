@@ -10,17 +10,17 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Check target lottery code"
+        description: "Check target lottery"
         required: true
-        default: "LO40"
+        default: "lotto365"
         type: choice
         options:
-          - LO40
-          - LP72
+          - lotto365
+          - pension
 
 jobs:
-  check-lp72:
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'LP72' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 4'
+  check-pension:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'pension' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 4'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,15 +43,16 @@ jobs:
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Check LP72 weekly winning
+      - name: Check Pension weekly winning
         run: pnpm run check:weekly
         env:
-          CHECK_TARGET: "LP72"
+          CHECK_TARGET: "pension"
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
+          LOTTO_DEBUG_AUTH: "true"
 
-  check-lo40:
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'LO40' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 6'
+  check-lotto365:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'lotto365' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 6'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -74,9 +75,10 @@ jobs:
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Check LO40 weekly winning
+      - name: Check Lotto365 weekly winning
         run: pnpm run check:weekly
         env:
-          CHECK_TARGET: "LO40"
+          CHECK_TARGET: "lotto365"
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
+          LOTTO_DEBUG_AUTH: "true"

@@ -3,7 +3,7 @@ import { appendFile } from "node:fs/promises";
 import { chromium } from "playwright";
 import { loginToDhlottery } from "./lotto/auth.js";
 import { selectMyLotteryledger, type LedgerItem } from "./lotto/ledger.js";
-import { userAgent } from "./lotto/constants.js";
+import { browserFingerprint, userAgent } from "./lotto/constants.js";
 
 type CheckTarget = "LO40" | "LP72";
 
@@ -27,11 +27,16 @@ function subtractDays(date: Date, days: number): Date {
 }
 
 function readTargetEnv(): CheckTarget {
-  const raw = (process.env.CHECK_TARGET ?? "").trim().toUpperCase();
-  if (raw === "LO40" || raw === "LP72") {
-    return raw;
+  const raw = (process.env.CHECK_TARGET ?? "").trim().toLowerCase();
+  if (raw === "lotto365" || raw === "lotto645" || raw === "lotto" || raw === "lo40") {
+    return "LO40";
   }
-  throw new Error("CHECK_TARGET must be LO40 or LP72.");
+  if (raw === "pension" || raw === "pension720" || raw === "lp72") {
+    return "LP72";
+  }
+  throw new Error(
+    "CHECK_TARGET must be lotto365 or pension. (legacy aliases: LO40, LP72, LOTTO645, LOTTO, PENSION720)"
+  );
 }
 
 function isValidYmd(value: string): boolean {
@@ -79,7 +84,7 @@ function errorMessage(error: unknown): string {
 function isConfigError(error: unknown): boolean {
   const message = errorMessage(error);
   return (
-    message.includes("CHECK_TARGET must be LO40 or LP72") ||
+    message.includes("CHECK_TARGET must be lotto365 or pension") ||
     message.includes("Missing LOTTO_USER_ID or LOTTO_USER_PASSWORD") ||
     message.includes("CHECK_FROM_YMD and CHECK_TO_YMD") ||
     message.includes("CHECK_FROM_YMD must be less than or equal to CHECK_TO_YMD")
@@ -161,9 +166,16 @@ async function main(): Promise<void> {
   const { fromYmd, toYmd } = readRangeEnv(now);
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ userAgent });
+  const context = await browser.newContext({
+    userAgent,
+    locale: browserFingerprint.locale,
+    timezoneId: browserFingerprint.timezoneId,
+    viewport: browserFingerprint.viewport,
+    deviceScaleFactor: browserFingerprint.deviceScaleFactor,
+    extraHTTPHeaders: browserFingerprint.extraHTTPHeaders
+  });
   try {
-    await loginToDhlottery(context, { userId, userPassword });
+    await loginToDhlottery(context, { userId, userPassword, validateWithBalance: false });
     const response = await selectMyLotteryledger(context, {
       fromYmd,
       toYmd,
