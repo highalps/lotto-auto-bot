@@ -2,12 +2,38 @@ name: Buy Lotto
 
 on:
   schedule:
-    # GitHub Actions cron is UTC. 04:00 UTC = 13:00 KST (Saturday).
+    # GitHub Actions cron is UTC. 04:00 UTC = 13:00 KST.
+    # Thursday: Pension-only run
+    - cron: "0 4 * * 4"
+    # Saturday: Lotto-only run
     - cron: "0 4 * * 6"
   workflow_dispatch:
 
 jobs:
-  buy:
+  buy-lotto:
+    # Manual runs always execute all requested modes by workflow variables.
+    # Thursday schedule runs pension or both/all.
+    # Saturday schedule runs lotto or both/all.
+    if: |
+      github.event_name != 'schedule' ||
+      (
+        github.event.schedule == '0 4 * * 4' &&
+        (
+          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'PENSION' ||
+          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'PENSION_ONLY' ||
+          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'BOTH' ||
+          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'ALL'
+        )
+      ) ||
+      (
+        github.event.schedule == '0 4 * * 6' &&
+        (
+          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'LOTTO' ||
+          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'LOTTO_ONLY' ||
+          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'BOTH' ||
+          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'ALL'
+        )
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,7 +61,20 @@ jobs:
         env:
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
-          LOTTO_BUY_MODE: ${{ vars.LOTTO_BUY_MODE || 'LOTTO_ONLY' }}
+          LOTTO_BUY_MODE: >
+            ${{ (github.event_name == 'schedule' && github.event.schedule == '0 4 * * 4' && (
+                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'PENSION') ||
+                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'PENSION_ONLY') ||
+                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'BOTH') ||
+                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'ALL')
+               )) && 'PENSION_ONLY' ||
+               (github.event_name == 'schedule' && github.event.schedule == '0 4 * * 6' && (
+                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'LOTTO') ||
+                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'LOTTO_ONLY') ||
+                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'BOTH') ||
+                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'ALL')
+               )) && 'LOTTO_ONLY' ||
+               (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') }}
           LOTTO_COUNT: ${{ vars.LOTTO_COUNT || '5' }}
           PENSION_COUNT: ${{ vars.PENSION_COUNT || '1' }}
           PLAYWRIGHT_HEADLESS: "true"

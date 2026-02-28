@@ -3,9 +3,52 @@ import { elotteryUrl } from "./constants.js";
 import type { BuyPension720Options, BuyPension720Response } from "./types.js";
 
 const pension720Url = `${elotteryUrl}/game/TotalGame.jsp?LottoId=LP72`;
+const pension720MobileUrl = pension720Url.replace("https://el.dhlottery.co.kr", "https://m.dhlottery.co.kr");
 
-function isPension720Frame(frame: Frame): boolean {
-  return frame.url().includes("/game/pension720/");
+function isLikelyPension720Url(url: string): boolean {
+  return /LP72/i.test(url) || /pension720/i.test(url) || /totalgame/i.test(url);
+}
+
+type PensionFrameSignal = {
+  frame: Frame;
+  score: number;
+  buyCntCount: number;
+  autoButtonCount: number;
+  orderNoCount: number;
+};
+
+async function inspectPension720Signals(frame: Frame): Promise<PensionFrameSignal> {
+  const frameUrl = frame.url();
+  const [buyCntCount, autoButtonCount, orderNoCount] = await Promise.all([
+    frame.locator("#frm input[name='BUY_CNT']").count().catch(() => 0),
+    frame.locator("a[onclick='doAuto()']").count().catch(() => 0),
+    frame.locator("#lotto720_popup_pay .orderNo").count().catch(() => 0)
+  ]);
+
+  let score = 0;
+  if (isLikelyPension720Url(frameUrl)) {
+    score += 4;
+  }
+  if (buyCntCount > 0) {
+    score += 10;
+  }
+  if (autoButtonCount > 0) {
+    score += 10;
+  }
+  if (orderNoCount > 0) {
+    score += 2;
+  }
+
+  return { frame, score, buyCntCount, autoButtonCount, orderNoCount };
+}
+
+function summarizeFrames(signals: PensionFrameSignal[]): string {
+  return signals
+    .map(
+      (signal) =>
+        `${signal.frame.url()} [score=${signal.score}, buyCnt=${signal.buyCntCount}, auto=${signal.autoButtonCount}, order=${signal.orderNoCount}]`
+    )
+    .join(", ");
 }
 
 async function waitForPension720GameFrame(contextFrame: Frame, timeoutMs: number): Promise<Frame> {
@@ -13,12 +56,11 @@ async function waitForPension720GameFrame(contextFrame: Frame, timeoutMs: number
   let triggeredTabView = false;
 
   while (Date.now() - startedAt < timeoutMs) {
-    const candidateFrames = contextFrame.page().frames().filter(isPension720Frame);
-    for (const frame of candidateFrames) {
-      const buyCntInput = await frame.locator("#frm input[name='BUY_CNT']").count().catch(() => 0);
-      if (buyCntInput > 0) {
-        return frame;
-      }
+    const frameSignals = await Promise.all(contextFrame.page().frames().map(inspectPension720Signals));
+    const candidates = frameSignals.filter((signal) => signal.score >= 10);
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => b.score - a.score);
+      return candidates[0].frame;
     }
 
     // 간헐적으로 탭 전환 스크립트가 지연 적용되므로 LP72 탭 이동을 한 번 강제 시도한다.
@@ -38,8 +80,8 @@ async function waitForPension720GameFrame(contextFrame: Frame, timeoutMs: number
     await contextFrame.page().waitForTimeout(250);
   }
 
-  const frameUrls = contextFrame.page().frames().map((frame) => frame.url()).join(", ");
-  throw new Error(`Pension720 game frame not found. frames=[${frameUrls}]`);
+  const frameSummary = summarizeFrames(await Promise.all(contextFrame.page().frames().map(inspectPension720Signals)));
+  throw new Error(`Pension720 game frame not found. page=${contextFrame.page().url()} frames=[${frameSummary}]`);
 }
 
 async function getBuyCount(frame: Frame): Promise<number> {
@@ -169,12 +211,34 @@ export async function buyPension720Auto(
   });
 
   try {
-    const gameResponse = await page.goto(pension720Url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    if (!gameResponse || !gameResponse.ok()) {
-      throw new Error(`Pension720 page request failed. status=${gameResponse?.status() ?? "unknown"}`);
+    const targetUrls = [pension720Url, pension720MobileUrl];
+    let gameFrame: Frame | null = null;
+    let gameResponseStatus: number | "unknown" = "unknown";
+    let lastError: unknown;
+
+    for (const targetUrl of targetUrls) {
+      const gameResponse = await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+      gameResponseStatus = gameResponse?.status() ?? "unknown";
+      if (!gameResponse || !gameResponse.ok()) {
+        lastError = new Error(`Pension720 page request failed. status=${gameResponseStatus} url=${targetUrl}`);
+        continue;
+      }
+
+      try {
+        gameFrame = await waitForPension720GameFrame(page.mainFrame(), 20000);
+        break;
+      } catch (error) {
+        lastError = error;
+      }
     }
 
-    const gameFrame = await waitForPension720GameFrame(page.mainFrame(), 20000);
+    if (!gameFrame) {
+      const message =
+        lastError instanceof Error ? lastError.message : `${String(lastError)}`;
+      throw new Error(
+        `Pension720 game frame not found after URL fallback. status=${gameResponseStatus} urls=[${targetUrls.join(", ")}] lastError=${message}`
+      );
+    }
 
     await gameFrame.waitForSelector("#frm input[name='BUY_CNT']", { state: "attached", timeout: 15000 });
     await gameFrame.waitForSelector("a[onclick='doAuto()']", { state: "attached", timeout: 15000 });
