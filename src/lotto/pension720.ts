@@ -1,4 +1,4 @@
-import type { BrowserContext, Frame } from "playwright";
+import type { BrowserContext, Frame, Locator, Page } from "playwright";
 import { baseUrl, elotteryUrl } from "./constants.js";
 import type { BuyPension720Options, BuyPension720Response } from "./types.js";
 
@@ -6,6 +6,31 @@ const pension720Url = `${elotteryUrl}/game/TotalGame.jsp?LottoId=LP72`;
 const pension720MobileUrl = pension720Url.replace("https://el.dhlottery.co.kr", "https://m.dhlottery.co.kr");
 const pension720WwwUrl = pension720Url.replace("https://el.dhlottery.co.kr", "https://www.dhlottery.co.kr");
 const pension720AlternativeUrls = [pension720WwwUrl, `${baseUrl}/game/TotalGame.jsp?LottoId=LP72`];
+const buyCountSelectors = [
+  "#frm input[name='BUY_CNT']",
+  "#frm input[id*='BUY_CNT']",
+  "#frm input[name*='BUY_CNT']",
+  "#frm input[name='buyCnt']",
+  "#frm input[id='buyCnt']",
+  "#frm input[name='buy_count']",
+  "#frm input[name='sel_cnt']",
+  "input[name='BUY_CNT']",
+  "input[id='BUY_CNT']",
+  "input[name='buyCnt']"
+];
+const directBuyCountSelectors = ["input[id*='BUY'], input[name*='BUY']", "input[id*='COUNT'], input[name*='COUNT']", "input[id*='CNT'], input[name*='CNT']"];
+const autoButtonSelectors = "a[onclick='doAuto()'], button[onclick='doAuto()'], [onclick='doAuto()'], .btn_auto";
+const autoButtonTextKeywords = ["자동", "auto", "랜덤", "자동선택"];
+const autoFunctionCandidates = ["doAuto", "autoSelect", "doAutoSelect", "auto", "자동선택", "selectAuto"];
+const addBuyFunctionCandidates = [
+  "addBuyDataOne",
+  "appendBuyNumber",
+  "appendAutoNumber",
+  "addBuy",
+  "addAutoBuyNumber",
+  "addDataOne",
+  "addLotto"
+];
 
 function isLikelyPension720Url(url: string): boolean {
   return /LP72/i.test(url) || /pension720/i.test(url) || /totalgame/i.test(url);
@@ -17,13 +42,102 @@ type PensionFrameSignal = {
   buyCntCount: number;
   autoButtonCount: number;
   orderNoCount: number;
+  hasOrderRequestFn: boolean;
+  hasAutoFn: boolean;
 };
+
+async function findBuyCountLocator(frame: Frame): Promise<Locator | null> {
+  for (const selector of buyCountSelectors) {
+    const locator = frame.locator(selector).first();
+    const count = await locator.count().catch(() => 0);
+    if (count > 0) {
+      return locator;
+    }
+  }
+  return null;
+}
+
+function trimFunctionNames(candidates: string[]): string[] {
+  return candidates
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+async function findCallableFunctionName(frame: Frame, candidates: string[]): Promise<string | null> {
+  const normalized = trimFunctionNames(candidates);
+  const directMatch = await frame.evaluate((candidateNames) => {
+    const globalWindow = globalThis as Record<string, unknown>;
+    for (const name of candidateNames) {
+      const value = globalWindow[name];
+      if (typeof value === "function") {
+        return name;
+      }
+    }
+    return null;
+  }, normalized);
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const heuristics = await frame.evaluate((candidateNames) => {
+    const globalWindow = globalThis as Record<string, unknown>;
+    const lowerCandidates = candidateNames.map((value) => value.toLowerCase());
+    for (const key of Object.keys(globalWindow)) {
+      if (lowerCandidates.some((candidate) => key.toLowerCase().includes(candidate) || candidate.includes(key.toLowerCase()))) {
+        const value = globalWindow[key];
+        if (typeof value === "function") {
+          return key;
+        }
+      }
+    }
+    return null;
+  }, normalized);
+  return heuristics;
+}
+
+async function clickAutoButton(frame: Frame): Promise<boolean> {
+  return frame.evaluate((keywordList) => {
+    const candidateSelectors = [
+      "a[onclick*='auto' i]",
+      "a[onclick*='Auto' i]",
+      "button[onclick*='auto' i]",
+      "button[onclick*='Auto' i]",
+      "input[type='button'][onclick*='auto' i]",
+      ".btn_auto",
+      ".auto_btn",
+      "[class*='auto']"
+    ];
+
+    for (const selector of candidateSelectors) {
+      const candidate = Array.from(document.querySelectorAll(selector)) as Array<HTMLElement>;
+      if (candidate.length > 0) {
+        candidate[0]?.click();
+        return true;
+      }
+    }
+
+    const allClickable = Array.from(
+      document.querySelectorAll("button, a, input[type='button'], input[type='submit']")
+    ) as Array<HTMLElement>;
+    const keywords = keywordList.map((keyword) => keyword.toLowerCase());
+    for (const element of allClickable) {
+      const normalizedText = ((element.textContent ?? "") + (element.getAttribute("value") ?? "")).toLowerCase();
+      if (keywords.some((keyword) => normalizedText.includes(keyword))) {
+        element.click();
+        return true;
+      }
+    }
+
+    return false;
+  }, autoButtonTextKeywords);
+}
 
 async function inspectPension720Signals(frame: Frame): Promise<PensionFrameSignal> {
   const frameUrl = frame.url();
+  const buyCountLocator = await findBuyCountLocator(frame);
   const [buyCntCount, autoButtonCount, orderNoCount] = await Promise.all([
-    frame.locator("#frm input[name='BUY_CNT']").count().catch(() => 0),
-    frame.locator("a[onclick='doAuto()']").count().catch(() => 0),
+    buyCountLocator ? buyCountLocator.count().catch(() => 0) : Promise.resolve(0),
+    frame.locator(autoButtonSelectors).count().catch(() => 0),
     frame.locator("#lotto720_popup_pay .orderNo").count().catch(() => 0)
   ]);
 
@@ -90,7 +204,7 @@ async function waitForPension720GameFrame(contextFrame: Frame, timeoutMs: number
   throw new Error(`Pension720 game frame not found. page=${contextFrame.page().url()} frames=[${frameSummary}]`);
 }
 
-async function openWithUiFallback(page: import("playwright").Page): Promise<void> {
+async function openWithUiFallback(page: Page): Promise<void> {
   const mainTarget = page;
   await mainTarget.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => undefined);
   await mainTarget.waitForTimeout(500).catch(() => undefined);
@@ -112,7 +226,7 @@ async function openWithUiFallback(page: import("playwright").Page): Promise<void
   await mainTarget.waitForTimeout(1500).catch(() => undefined);
 }
 
-async function findPensionFrame(page: import("playwright").Page, timeoutMs: number): Promise<Frame | null> {
+async function findPensionFrame(page: Page, timeoutMs: number): Promise<Frame | null> {
   try {
     return await waitForPension720GameFrame(page.mainFrame(), timeoutMs);
   } catch {
@@ -120,11 +234,16 @@ async function findPensionFrame(page: import("playwright").Page, timeoutMs: numb
   }
 }
 
-async function getBuyCount(frame: Frame): Promise<number> {
-  const value = await frame.locator("#frm input[name='BUY_CNT']").inputValue();
+async function getBuyCount(frame: Frame): Promise<number | null> {
+  const locator = await findBuyCountLocator(frame);
+  if (!locator) {
+    return null;
+  }
+
+  const value = await locator.inputValue().catch(() => "");
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
-    return 0;
+    return null;
   }
   return parsed;
 }
@@ -133,12 +252,61 @@ async function waitForBuyCountAtLeast(frame: Frame, minimumCount: number, timeou
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     const currentCount = await getBuyCount(frame);
+    if (currentCount === null) {
+      throw new Error("Pension720 buy count input is no longer available.");
+    }
     if (currentCount >= minimumCount) {
       return currentCount;
     }
     await frame.page().waitForTimeout(200);
   }
   throw new Error(`Timed out while waiting selected pension numbers. minimumCount=${minimumCount}`);
+}
+
+async function waitForPensionFrameReady(frame: Frame, timeoutMs: number): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const hasBuyCount = (await findBuyCountLocator(frame)) !== null;
+    const autoButtonCount = await frame.locator(autoButtonSelectors).count().catch(() => 0);
+    const hasOrderArea = await frame.locator("#lotto720_popup_pay").count().catch(() => 0);
+
+    if (hasBuyCount || autoButtonCount > 0 || hasOrderArea > 0) {
+      return;
+    }
+
+    await frame.page().waitForTimeout(250);
+  }
+
+  throw new Error("Pension720 game frame is not ready: missing expected controls.");
+}
+
+async function waitForSelectedNumberAppeared(frame: Frame, selectedNumber: string, timeoutMs: number): Promise<void> {
+  const prefixed = `1${selectedNumber}`;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const appeared = await frame
+      .evaluate((target) => {
+        const text = document.body?.textContent ?? "";
+        if (text.replace(/\s+/g, "").includes(target)) {
+          return true;
+        }
+
+        const inputs = Array.from(document.querySelectorAll("input")).filter((element) => {
+          const value = (element as HTMLInputElement).value;
+          return value.includes(target);
+        });
+        return inputs.length > 0;
+      }, prefixed)
+      .catch(() => false);
+
+    if (appeared) {
+      return;
+    }
+    await frame.page().waitForTimeout(200);
+  }
+
+  throw new Error(`Timed out while waiting selected number to appear. number=${prefixed}`);
 }
 
 async function requestAutoLotNo(frame: Frame, timeoutMs: number): Promise<string> {
@@ -297,17 +465,27 @@ export async function buyPension720Auto(
       );
     }
 
-    await gameFrame.waitForSelector("#frm input[name='BUY_CNT']", { state: "attached", timeout: 15000 });
-    await gameFrame.waitForSelector("a[onclick='doAuto()']", { state: "attached", timeout: 15000 });
+    await waitForPensionFrameReady(gameFrame, 20000);
 
+    const canReadBuyCount = (await findBuyCountLocator(gameFrame)) !== null;
+    let selectedGameCount = 0;
     for (let attempt = 0; attempt < options.gameCount; attempt += 1) {
-      const beforeCount = await getBuyCount(gameFrame);
+      const beforeCount = canReadBuyCount ? await getBuyCount(gameFrame) : null;
       const lotNo = await requestAutoLotNo(gameFrame, 15000);
       await appendBuyNumber(gameFrame, lotNo);
-      await waitForBuyCountAtLeast(gameFrame, beforeCount + 1, 15000);
+      if (canReadBuyCount) {
+        const nextCount = await waitForBuyCountAtLeast(gameFrame, (beforeCount ?? 0) + 1, 15000);
+        selectedGameCount = nextCount;
+      } else {
+        await waitForSelectedNumberAppeared(gameFrame, lotNo, 15000);
+        selectedGameCount += 1;
+      }
     }
 
-    const selectedGameCount = await getBuyCount(gameFrame);
+    if (canReadBuyCount) {
+      selectedGameCount = (await getBuyCount(gameFrame)) ?? selectedGameCount;
+    }
+
     if (selectedGameCount < options.gameCount) {
       throw new Error(
         `Pension720 selected count is smaller than requested. selected=${selectedGameCount}, requested=${options.gameCount}`
