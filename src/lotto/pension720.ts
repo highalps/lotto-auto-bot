@@ -1,9 +1,11 @@
 import type { BrowserContext, Frame } from "playwright";
-import { elotteryUrl } from "./constants.js";
+import { baseUrl, elotteryUrl } from "./constants.js";
 import type { BuyPension720Options, BuyPension720Response } from "./types.js";
 
 const pension720Url = `${elotteryUrl}/game/TotalGame.jsp?LottoId=LP72`;
 const pension720MobileUrl = pension720Url.replace("https://el.dhlottery.co.kr", "https://m.dhlottery.co.kr");
+const pension720WwwUrl = pension720Url.replace("https://el.dhlottery.co.kr", "https://www.dhlottery.co.kr");
+const pension720AlternativeUrls = [pension720WwwUrl, `${baseUrl}/game/TotalGame.jsp?LottoId=LP72`];
 
 function isLikelyPension720Url(url: string): boolean {
   return /LP72/i.test(url) || /pension720/i.test(url) || /totalgame/i.test(url);
@@ -57,7 +59,11 @@ async function waitForPension720GameFrame(contextFrame: Frame, timeoutMs: number
 
   while (Date.now() - startedAt < timeoutMs) {
     const frameSignals = await Promise.all(contextFrame.page().frames().map(inspectPension720Signals));
-    const candidates = frameSignals.filter((signal) => signal.score >= 10);
+    const strictCandidates = frameSignals.filter(
+      (signal) => signal.buyCntCount > 0 || signal.autoButtonCount > 0 || signal.score >= 14
+    );
+    const candidates = strictCandidates.length > 0 ? strictCandidates : frameSignals.filter((signal) => signal.score >= 4);
+
     if (candidates.length > 0) {
       candidates.sort((a, b) => b.score - a.score);
       return candidates[0].frame;
@@ -82,6 +88,36 @@ async function waitForPension720GameFrame(contextFrame: Frame, timeoutMs: number
 
   const frameSummary = summarizeFrames(await Promise.all(contextFrame.page().frames().map(inspectPension720Signals)));
   throw new Error(`Pension720 game frame not found. page=${contextFrame.page().url()} frames=[${frameSummary}]`);
+}
+
+async function openWithUiFallback(page: import("playwright").Page): Promise<void> {
+  const mainTarget = page;
+  await mainTarget.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => undefined);
+  await mainTarget.waitForTimeout(500).catch(() => undefined);
+
+  await mainTarget.evaluate(() => {
+    const tabview = (globalThis as { tabview?: (lottoId: string) => void }).tabview;
+    if (typeof tabview === "function") {
+      tabview("LP72");
+      return;
+    }
+
+    const anchors = Array.from(document.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+    const matchedAnchor = anchors.find((anchor) => anchor.href.includes("LP72"));
+    if (matchedAnchor) {
+      matchedAnchor.click();
+    }
+  });
+
+  await mainTarget.waitForTimeout(1500).catch(() => undefined);
+}
+
+async function findPensionFrame(page: import("playwright").Page, timeoutMs: number): Promise<Frame | null> {
+  try {
+    return await waitForPension720GameFrame(page.mainFrame(), timeoutMs);
+  } catch {
+    return null;
+  }
 }
 
 async function getBuyCount(frame: Frame): Promise<number> {
@@ -211,32 +247,53 @@ export async function buyPension720Auto(
   });
 
   try {
-    const targetUrls = [pension720Url, pension720MobileUrl];
+    const targetUrls = [pension720Url, pension720MobileUrl, ...pension720AlternativeUrls];
     let gameFrame: Frame | null = null;
     let gameResponseStatus: number | "unknown" = "unknown";
+    let gameResponseUrl = "";
+    const responseTexts: string[] = [];
     let lastError: unknown;
 
     for (const targetUrl of targetUrls) {
-      const gameResponse = await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+      gameResponseUrl = targetUrl;
+      const gameResponse = await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((error) => {
+        lastError = error;
+        return null;
+      });
       gameResponseStatus = gameResponse?.status() ?? "unknown";
-      if (!gameResponse || !gameResponse.ok()) {
-        lastError = new Error(`Pension720 page request failed. status=${gameResponseStatus} url=${targetUrl}`);
-        continue;
+      if (gameResponse) {
+        try {
+          const text = await gameResponse.text().catch(() => null);
+          if (text && text.length > 0) {
+            responseTexts.push(text.slice(0, 200));
+          }
+        } catch {
+          // no-op
+        }
       }
 
-      try {
-        gameFrame = await waitForPension720GameFrame(page.mainFrame(), 20000);
+      gameFrame = await findPensionFrame(page, 12000);
+      if (gameFrame) {
         break;
-      } catch (error) {
-        lastError = error;
       }
+      lastError = new Error(`Pension720 frame not found on ${targetUrl} status=${gameResponseStatus}`);
+    }
+
+    if (!gameFrame) {
+      await openWithUiFallback(page).catch(() => undefined);
+      gameFrame = await findPensionFrame(page, 15000);
+    }
+
+    if (!gameFrame) {
+      await openWithUiFallback(page).catch(() => undefined);
+      gameFrame = await findPensionFrame(page, 10000);
     }
 
     if (!gameFrame) {
       const message =
         lastError instanceof Error ? lastError.message : `${String(lastError)}`;
       throw new Error(
-        `Pension720 game frame not found after URL fallback. status=${gameResponseStatus} urls=[${targetUrls.join(", ")}] lastError=${message}`
+        `Pension720 game frame not found after all fallback steps. status=${gameResponseStatus} lastUrl=${gameResponseUrl} urls=[${targetUrls.join(", ")}] responseSamples=[${responseTexts.join(" | ")}] lastError=${message} page=${page.url()}`
       );
     }
 
