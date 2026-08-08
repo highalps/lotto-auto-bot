@@ -46,6 +46,17 @@ type PensionFrameSignal = {
   hasAutoFn: boolean;
 };
 
+function isOperationalPensionFrame(signal: PensionFrameSignal): boolean {
+  return (
+    isLikelyPension720Url(signal.frame.url()) &&
+    (signal.buyCntCount > 0 ||
+      signal.autoButtonCount > 0 ||
+      signal.orderNoCount > 0 ||
+      signal.hasAutoFn ||
+      signal.hasOrderRequestFn)
+  );
+}
+
 async function findBuyCountLocator(frame: Frame): Promise<Locator | null> {
   for (const selector of buyCountSelectors) {
     const locator = frame.locator(selector).first();
@@ -135,10 +146,17 @@ async function clickAutoButton(frame: Frame): Promise<boolean> {
 async function inspectPension720Signals(frame: Frame): Promise<PensionFrameSignal> {
   const frameUrl = frame.url();
   const buyCountLocator = await findBuyCountLocator(frame);
-  const [buyCntCount, autoButtonCount, orderNoCount] = await Promise.all([
+  const [buyCntCount, autoButtonCount, orderNoCount, functions] = await Promise.all([
     buyCountLocator ? buyCountLocator.count().catch(() => 0) : Promise.resolve(0),
     frame.locator(autoButtonSelectors).count().catch(() => 0),
-    frame.locator("#lotto720_popup_pay .orderNo").count().catch(() => 0)
+    frame.locator("#lotto720_popup_pay .orderNo").count().catch(() => 0),
+    frame
+      .evaluate(() => ({
+        hasAutoFn: typeof (globalThis as { doAuto?: unknown }).doAuto === "function",
+        hasOrderRequestFn:
+          typeof (globalThis as { doOrderRequest?: unknown }).doOrderRequest === "function"
+      }))
+      .catch(() => ({ hasAutoFn: false, hasOrderRequestFn: false }))
   ]);
 
   let score = 0;
@@ -154,15 +172,29 @@ async function inspectPension720Signals(frame: Frame): Promise<PensionFrameSigna
   if (orderNoCount > 0) {
     score += 2;
   }
+  if (functions.hasAutoFn) {
+    score += 10;
+  }
+  if (functions.hasOrderRequestFn) {
+    score += 6;
+  }
 
-  return { frame, score, buyCntCount, autoButtonCount, orderNoCount };
+  return {
+    frame,
+    score,
+    buyCntCount,
+    autoButtonCount,
+    orderNoCount,
+    hasAutoFn: functions.hasAutoFn,
+    hasOrderRequestFn: functions.hasOrderRequestFn
+  };
 }
 
 function summarizeFrames(signals: PensionFrameSignal[]): string {
   return signals
     .map(
       (signal) =>
-        `${signal.frame.url()} [score=${signal.score}, buyCnt=${signal.buyCntCount}, auto=${signal.autoButtonCount}, order=${signal.orderNoCount}]`
+        `${signal.frame.url()} [score=${signal.score}, buyCnt=${signal.buyCntCount}, autoButton=${signal.autoButtonCount}, autoFn=${signal.hasAutoFn}, order=${signal.orderNoCount}, orderFn=${signal.hasOrderRequestFn}]`
     )
     .join(", ");
 }
@@ -173,10 +205,7 @@ async function waitForPension720GameFrame(contextFrame: Frame, timeoutMs: number
 
   while (Date.now() - startedAt < timeoutMs) {
     const frameSignals = await Promise.all(contextFrame.page().frames().map(inspectPension720Signals));
-    const strictCandidates = frameSignals.filter(
-      (signal) => signal.buyCntCount > 0 || signal.autoButtonCount > 0 || signal.score >= 14
-    );
-    const candidates = strictCandidates.length > 0 ? strictCandidates : frameSignals.filter((signal) => signal.score >= 4);
+    const candidates = frameSignals.filter(isOperationalPensionFrame);
 
     if (candidates.length > 0) {
       candidates.sort((a, b) => b.score - a.score);
@@ -269,8 +298,12 @@ async function waitForPensionFrameReady(frame: Frame, timeoutMs: number): Promis
     const hasBuyCount = (await findBuyCountLocator(frame)) !== null;
     const autoButtonCount = await frame.locator(autoButtonSelectors).count().catch(() => 0);
     const hasOrderArea = await frame.locator("#lotto720_popup_pay").count().catch(() => 0);
+    const [autoFunctionName, orderFunctionName] = await Promise.all([
+      findCallableFunctionName(frame, autoFunctionCandidates).catch(() => null),
+      findCallableFunctionName(frame, ["doOrderRequest"]).catch(() => null)
+    ]);
 
-    if (hasBuyCount || autoButtonCount > 0 || hasOrderArea > 0) {
+    if (hasBuyCount || autoButtonCount > 0 || hasOrderArea > 0 || autoFunctionName || orderFunctionName) {
       return;
     }
 
