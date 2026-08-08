@@ -26,6 +26,13 @@ export type LedgerItem = {
   lramSmamTypeCd: string | null;
 };
 
+export function getPurchasedGameCount(items: Array<Pick<LedgerItem, "prchsQty">>): number {
+  return items.reduce((total, item) => {
+    const quantity = Number(item.prchsQty);
+    return Number.isInteger(quantity) && quantity > 0 ? total + quantity : total;
+  }, 0);
+}
+
 type LedgerResponse = {
   data?: {
     total?: number;

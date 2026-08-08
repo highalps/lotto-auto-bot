@@ -2,7 +2,7 @@ import "dotenv/config";
 import { appendFile, writeFile } from "node:fs/promises";
 import { chromium } from "playwright";
 import { loginToDhlottery } from "./lotto/auth.js";
-import { selectMyLotteryledger, type LedgerItem } from "./lotto/ledger.js";
+import { getPurchasedGameCount, selectMyLotteryledger, type LedgerItem } from "./lotto/ledger.js";
 import { browserFingerprint, userAgent } from "./lotto/constants.js";
 
 type CheckTarget = "LO40" | "LP72";
@@ -136,6 +136,7 @@ function buildSummaryMarkdown(args: {
   list: LedgerItem[];
   wonList: LedgerItem[];
   unresolvedList: LedgerItem[];
+  purchasedGameCount: number;
   totalWinAmount: number;
 }): string {
   const targetName = args.target === "LO40" ? "로또6/45" : "연금복권720+";
@@ -155,16 +156,17 @@ function buildSummaryMarkdown(args: {
   } else {
     lines.push("- 상태: SUCCESS (당첨 없음)");
   }
-  lines.push(`- 구매건수: ${args.list.length}건`);
-  lines.push(`- 당첨건수: ${args.wonList.length}건`);
-  lines.push(`- 미추첨/미확인: ${args.unresolvedList.length}건`);
+  lines.push(`- 구매 주문수: ${args.list.length}건`);
+  lines.push(`- 구매 게임수: ${args.purchasedGameCount}게임`);
+  lines.push(`- 당첨 주문수: ${args.wonList.length}건`);
+  lines.push(`- 미추첨/미확인 주문수: ${args.unresolvedList.length}건`);
   lines.push(`- 당첨금 합계: ${args.totalWinAmount.toLocaleString("ko-KR")}원`);
   lines.push("");
-  lines.push("| 구입일자 | 상품 | 회차 | 당첨결과 | 당첨금 | 번호/정보 |");
-  lines.push("|---|---|---|---|---|---|");
+  lines.push("| 구입일자 | 상품 | 회차 | 게임수 | 당첨결과 | 당첨금 | 번호/정보 |");
+  lines.push("|---|---|---|---:|---|---|---|");
   for (const item of args.list) {
     lines.push(
-      `| ${item.eltOrdrDt} | ${item.ltGdsNm} | ${item.ltEpsdView} | ${item.ltWnResult} | ${formatWonAmount(item)} | ${item.gmInfo ?? "-"} |`
+      `| ${item.eltOrdrDt} | ${item.ltGdsNm} | ${item.ltEpsdView} | ${item.prchsQty} | ${item.ltWnResult} | ${formatWonAmount(item)} | ${item.gmInfo ?? "-"} |`
     );
   }
   return `${lines.join("\n")}\n`;
@@ -220,6 +222,7 @@ async function main(): Promise<void> {
     const list = response.list;
     const wonList = list.filter((item) => item.ltWnResult === "당첨");
     const unresolvedList = list.filter((item) => item.ltWnResult === "미추첨" || item.ltWnResult === "미확인");
+    const purchasedGameCount = getPurchasedGameCount(list);
     const totalWinAmount = wonList.reduce((sum, item) => sum + parseAmount(item.ltWnAmt), 0);
     const bestRank = getBestRank(wonList);
 
@@ -229,6 +232,8 @@ async function main(): Promise<void> {
       fromYmd,
       toYmd,
       purchasedCount: list.length,
+      purchaseOrderCount: list.length,
+      purchasedGameCount,
       wonCount: wonList.length,
       unresolvedCount: unresolvedList.length,
       totalWinAmount,
@@ -240,6 +245,7 @@ async function main(): Promise<void> {
         list,
         wonList,
         unresolvedList,
+        purchasedGameCount,
         totalWinAmount
       })
     };
