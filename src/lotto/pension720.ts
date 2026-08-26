@@ -313,8 +313,13 @@ async function waitForPensionFrameReady(frame: Frame, timeoutMs: number): Promis
   throw new Error("Pension720 game frame is not ready: missing expected controls.");
 }
 
-async function waitForSelectedNumberAppeared(frame: Frame, selectedNumber: string, timeoutMs: number): Promise<void> {
-  const prefixed = `1${selectedNumber}`;
+async function waitForSelectedNumberAppeared(
+  frame: Frame,
+  selectedNumber: string,
+  groupNumber: number,
+  timeoutMs: number
+): Promise<void> {
+  const prefixed = `${groupNumber}${selectedNumber}`;
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
@@ -382,15 +387,15 @@ async function requestAutoLotNo(frame: Frame, timeoutMs: number): Promise<string
   throw new Error("Timed out while requesting pension auto number.");
 }
 
-async function appendBuyNumber(frame: Frame, lotNo: string): Promise<void> {
-  const appended = await frame.evaluate((value) => {
+async function appendBuyNumber(frame: Frame, lotNo: string, groupNumber: number): Promise<void> {
+  const appended = await frame.evaluate(({ value, group }) => {
     const addOneFn = (globalThis as { addBuyDataOne?: (...args: unknown[]) => void }).addBuyDataOne;
     if (typeof addOneFn !== "function") {
       return false;
     }
-    addOneFn(`1${value}`, 1, "S", "A", true);
+    addOneFn(`${group}${value}`, 1, "S", "A", true);
     return true;
-  }, lotNo);
+  }, { value: lotNo, group: groupNumber });
 
   if (!appended) {
     throw new Error("Pension720 addBuyDataOne is not available.");
@@ -502,15 +507,15 @@ export async function buyPension720Auto(
 
     const canReadBuyCount = (await findBuyCountLocator(gameFrame)) !== null;
     let selectedGameCount = 0;
-    for (let attempt = 0; attempt < options.gameCount; attempt += 1) {
+    const lotNo = await requestAutoLotNo(gameFrame, 15000);
+    for (let groupNumber = 1; groupNumber <= options.gameCount; groupNumber += 1) {
       const beforeCount = canReadBuyCount ? await getBuyCount(gameFrame) : null;
-      const lotNo = await requestAutoLotNo(gameFrame, 15000);
-      await appendBuyNumber(gameFrame, lotNo);
+      await appendBuyNumber(gameFrame, lotNo, groupNumber);
       if (canReadBuyCount) {
         const nextCount = await waitForBuyCountAtLeast(gameFrame, (beforeCount ?? 0) + 1, 15000);
         selectedGameCount = nextCount;
       } else {
-        await waitForSelectedNumberAppeared(gameFrame, lotNo, 15000);
+        await waitForSelectedNumberAppeared(gameFrame, lotNo, groupNumber, 15000);
         selectedGameCount += 1;
       }
     }

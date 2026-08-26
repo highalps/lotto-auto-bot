@@ -24,21 +24,26 @@ const gameFrame = `<!doctype html>
     <a onclick="doAuto()">자동선택</a>
     <div id="lotto720_popup_pay"><span class="orderNo"></span></div>
     <script>
+      window.autoCallCount = 0;
+      window.selectedNumbers = [];
       window.doAuto = () => {
+        window.autoCallCount += 1;
         window.data = { resultCode: "100", resultMsg: "", selLotNo: "123456" };
       };
-      window.addBuyDataOne = () => {
+      window.addBuyDataOne = (lotNo) => {
+        window.selectedNumbers.push(lotNo);
         const input = document.querySelector("input[name='BUY_CNT']");
         input.value = String(Number(input.value) + 1);
       };
       window.doOrderRequest = () => {
-        document.querySelector(".orderNo").textContent = "TEST-ORDER";
+        document.querySelector(".orderNo").textContent =
+          window.autoCallCount + ":" + window.selectedNumbers.join(",");
       };
     </script>
   </body>
 </html>`;
 
-test("waits for the delayed LP72 game iframe instead of selecting the wrapper", async () => {
+test("uses one random Pension720 number across different groups in the delayed game iframe", async () => {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
 
@@ -50,11 +55,11 @@ test("waits for the delayed LP72 game iframe instead of selecting the wrapper", 
   });
 
   try {
-    const result = await buyPension720Auto(context, { gameCount: 1 });
+    const result = await buyPension720Auto(context, { gameCount: 3 });
     assert.deepEqual(result, {
-      requestedGameCount: 1,
-      selectedGameCount: 1,
-      orderNo: "TEST-ORDER"
+      requestedGameCount: 3,
+      selectedGameCount: 3,
+      orderNo: "1:1123456,2123456,3123456"
     });
   } finally {
     await context.close();
