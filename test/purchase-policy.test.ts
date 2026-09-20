@@ -1,10 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { guardedPurchase, purchaseRange, retryRead } from "../src/lotto/purchase-policy.js";
+import { guardedPurchase, purchaseRange, readDryRun, retryRead } from "../src/lotto/purchase-policy.js";
 import { buyLotto645Auto } from "../src/lotto/lotto645.js";
 import type { BrowserContext } from "playwright";
 
 const pause = async () => {};
+
+test("dry-run checks history without calling the purchase function", async () => {
+  let reads = 0;
+  const result = await guardedPurchase({ dryRun: true, pause,
+    hasPurchase: async () => { reads++; return false; },
+    buy: async () => assert.fail("Dry-run must never select numbers or submit payment")
+  });
+  assert.deepEqual(result, { status: "DRY_RUN" });
+  assert.equal(reads, 1);
+});
+
+test("dry-run skips existing purchases and propagates ledger failures", async () => {
+  const buy = async () => assert.fail("Dry-run must never buy");
+  assert.deepEqual(await guardedPurchase({ dryRun: true, pause, buy, hasPurchase: async () => true }), { status: "SKIPPED" });
+  await assert.rejects(guardedPurchase({ dryRun: true, pause, buy,
+    hasPurchase: async () => { throw new Error("Invalid ledger"); }
+  }), /Invalid ledger/);
+});
+
+test("invalid dry-run flags fail closed instead of accidentally buying", () => {
+  assert.equal(readDryRun(undefined), false);
+  assert.equal(readDryRun("false"), false);
+  assert.equal(readDryRun(" TRUE "), true);
+  for (const value of ["", "treu", "1", "yes"]) assert.throws(() => readDryRun(value));
+});
 
 test("lotto payment timeout is marked submitted and sent exactly once", async () => {
   let payments = 0;

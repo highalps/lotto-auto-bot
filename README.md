@@ -39,6 +39,9 @@
    - `target`: `LOTTO_ONLY`, `PENSION_ONLY`, `BOTH` 선택
    - `lotto_count`, `pension_count`: 각 상품별 구매 수량(1~5) 선택
    - 수동 입력은 Variables보다 우선합니다. 자동 실행은 기존 Variables를 사용합니다.
+   - `dry_run` 체크: 로그인 및 구매내역 조회 후 상품별 구매 예정 수량·예상 금액·스킵 여부만 확인합니다. 번호 선택이나 결제는 실행하지 않습니다.
+   - dry-run 기본값은 꺼짐이며 예약 실행은 기존대로 실제 구매합니다. 로컬에서는 `LOTTO_DRY_RUN=true pnpm run buy` (PowerShell: `$env:LOTTO_DRY_RUN='true'; pnpm run buy`)로 실행합니다. 로컬 실제 구매 전에는 해당 환경변수를 제거하거나 `false`로 변경하세요.
+   - dry-run도 로그인 Secrets가 필요하며, 조회 실패 시 오류로 종료합니다. 이미 구매한 상품은 예정 수량과 금액에서 제외됩니다. 잔액·번호 재고 확인이나 예약은 수행하지 않습니다.
 4. 실행 완료 후 해당 Run을 클릭하고 `Summary`에서 결과 확인
 
 ### 1-4) 자동 스케줄

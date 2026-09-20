@@ -7,6 +7,10 @@ on:
     - cron: "0 3 * * 0"
   workflow_dispatch:
     inputs:
+      dry_run:
+        description: "Dry-run: 구매 예정 정보만 확인 (실제 구매 없음)"
+        type: boolean
+        default: false
       target:
         description: "구매 상품 (수동 실행은 Variables보다 우선)"
         type: choice
@@ -72,3 +76,4 @@ jobs:
           LOTTO_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.lotto_count || vars.LOTTO_COUNT || '5' }}
           PENSION_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.pension_count || vars.PENSION_COUNT || '1' }}
           PLAYWRIGHT_HEADLESS: "true"
+          LOTTO_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}

@@ -1,5 +1,13 @@
 export type Product = "LO40" | "LP72";
 
+export function readDryRun(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  throw new Error("LOTTO_DRY_RUN must be true or false.");
+}
+
 // Each purchase cycle starts after the preceding draw, in Korean local time.
 export function purchaseRange(product: Product, now = new Date()) {
   const date = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -30,11 +38,13 @@ export async function guardedPurchase<T>(options: {
   hasPurchase: () => Promise<boolean>;
   buy: (markSubmitted: () => void) => Promise<T>;
   pause?: (ms: number) => Promise<void>;
-}): Promise<{ status: "PURCHASED" | "SKIPPED" | "RECOVERED"; response?: T }> {
+  dryRun?: boolean;
+}): Promise<{ status: "PURCHASED" | "SKIPPED" | "RECOVERED" | "DRY_RUN"; response?: T }> {
   const pause = options.pause ?? delay;
   for (let attempt = 1; ; attempt++) {
     // Fail closed if the ledger cannot be read; never assume that means no purchase.
     if (await retryRead(options.hasPurchase, pause)) return { status: "SKIPPED" };
+    if (options.dryRun) return { status: "DRY_RUN" };
     let submitted = false;
     try {
       const response = await options.buy(() => { submitted = true; });

@@ -7,7 +7,7 @@ import { buyLotto645Auto } from "./lotto/lotto645.js";
 import { buyPension720Auto } from "./lotto/pension720.js";
 import { browserFingerprint, userAgent } from "./lotto/constants.js";
 import { selectMyLotteryledger } from "./lotto/ledger.js";
-import { guardedPurchase, purchaseRange, retryRead, type Product } from "./lotto/purchase-policy.js";
+import { guardedPurchase, purchaseRange, readDryRun, type Product } from "./lotto/purchase-policy.js";
 
 type BuyMode = "STOP" | "LOTTO_ONLY" | "PENSION_ONLY" | "BOTH";
 
@@ -64,6 +64,7 @@ function isConfigError(error: unknown): boolean {
   return (
     message.includes("Missing LOTTO_USER_ID or LOTTO_USER_PASSWORD") ||
     message.includes("LOTTO_BUY_MODE must be one of") ||
+    message.includes("LOTTO_DRY_RUN must be") ||
     message.includes("must be an integer between 1 and 5")
   );
 }
@@ -85,6 +86,7 @@ async function main(): Promise<void> {
   const userId = process.env.LOTTO_USER_ID?.trim();
   const userPassword = process.env.LOTTO_USER_PASSWORD?.trim();
   const buyMode = readBuyModeEnv(process.env.LOTTO_BUY_MODE);
+  const dryRun = readDryRun(process.env.LOTTO_DRY_RUN);
   const lottoCount = readCountEnv("LOTTO_COUNT", process.env.LOTTO_COUNT ?? "5");
   const pensionCount = readCountEnv("PENSION_COUNT", process.env.PENSION_COUNT ?? "1");
 
@@ -135,11 +137,16 @@ async function main(): Promise<void> {
     };
     const reportProduct = async (product: Product, status: string) => {
       statuses[product] = status;
-      await writeGithubSummary(`### ${product === "LO40" ? "로또6/45" : "연금복권720+"}\n- 상태: ${status}\n- ${status === "SKIPPED" ? "이번 구매 주기에 이미 구매한 내역이 있어 건너뜀" : status === "RECOVERED" ? "응답 오류 후 구매내역에서 구매 완료 확인" : "구매 완료"}`);
+      const description = status === "DRY_RUN"
+        ? `구매 예정: ${product === "LO40" ? lottoCount : pensionCount}게임 (실제 구매 없음)`
+        : status === "SKIPPED" ? "이번 구매 주기에 이미 구매한 내역이 있어 건너뜀"
+        : status === "RECOVERED" ? "응답 오류 후 구매내역에서 구매 완료 확인" : "구매 완료";
+      await writeGithubSummary(`### ${product === "LO40" ? "로또6/45" : "연금복권720+"}\n- 상태: ${status}\n- ${description}`);
     };
 
     if (buyMode === "LOTTO_ONLY" || buyMode === "BOTH") {
       const result = await guardedPurchase({
+        dryRun,
         hasPurchase: hasPurchase("LO40"),
         buy: onSubmit => buyLotto645Auto(context, { gameCount: lottoCount, onSubmit })
       });
@@ -149,11 +156,30 @@ async function main(): Promise<void> {
 
     if (buyMode === "PENSION_ONLY" || buyMode === "BOTH") {
       const result = await guardedPurchase({
+        dryRun,
         hasPurchase: hasPurchase("LP72"),
         buy: onSubmit => buyPension720Auto(context, { gameCount: pensionCount, onSubmit })
       });
       pensionResponse = result.response ?? null;
       await reportProduct("LP72", result.status);
+    }
+
+    if (dryRun) {
+      const plannedLottoCount = statuses.LO40 === "DRY_RUN" ? lottoCount : 0;
+      const plannedPensionCount = statuses.LP72 === "DRY_RUN" ? pensionCount : 0;
+      const plannedAmount = (plannedLottoCount + plannedPensionCount) * 1000;
+      console.log(JSON.stringify({ success: true, dryRun, buyMode, statuses,
+        plannedLottoCount, plannedPensionCount, plannedAmount, purchasedCount: 0 }, null, 2));
+      await writeGithubSummary([
+        "## DRY-RUN 결과 (실제 구매 없음)",
+        `- LOTTO_BUY_MODE: ${buyMode}`,
+        `- 로또 구매 예정: ${plannedLottoCount}게임`,
+        `- 연금복권 구매 예정: ${plannedPensionCount}게임`,
+        `- 예상 결제금액: ${plannedAmount.toLocaleString("ko-KR")}원`,
+        "- 번호 선택 및 결제 요청을 수행하지 않았습니다.",
+        "- 실제 구매 시점의 잔액과 번호 재고에 따라 결과가 달라질 수 있습니다."
+      ].join("\n"));
+      return;
     }
 
     const balance = await getUserBalance(context).catch(error => {
