@@ -6,6 +6,7 @@ export type LoginOptions = {
 
 export type BuyLottoOptions = {
   gameCount: number;
+  onSubmit?: () => void;
 };
 
 export type BuyLottoResponse = {
@@ -19,6 +20,7 @@ export type BuyLottoResponse = {
 
 export type BuyPension720Options = {
   gameCount: number;
+  onSubmit?: () => void;
 };
 
 export type BuyPension720Response = {

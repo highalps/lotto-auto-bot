@@ -55,7 +55,9 @@ test("uses one random Pension720 number across different groups in the delayed g
   });
 
   try {
-    const result = await buyPension720Auto(context, { gameCount: 3 });
+    let submissions = 0;
+    const result = await buyPension720Auto(context, { gameCount: 3, onSubmit: () => { submissions++; } });
+    assert.equal(submissions, 1);
     assert.deepEqual(result, {
       requestedGameCount: 3,
       selectedGameCount: 3,

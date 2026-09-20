@@ -89,6 +89,9 @@ export async function selectMyLotteryledger(
   }
 
   const payload = (await response.json()) as LedgerResponse;
+  if (!Array.isArray(payload.data?.list)) {
+    throw new Error("Invalid ledger response: purchase history could not be verified.");
+  }
 
   return {
     total: payload.data?.total ?? 0,

@@ -530,6 +530,7 @@ export async function buyPension720Auto(
       );
     }
 
+    options.onSubmit?.();
     await gameFrame.evaluate(() => {
       const doOrderRequestFn = (globalThis as { doOrderRequest?: () => void }).doOrderRequest;
       if (typeof doOrderRequestFn === "function") {
@@ -543,6 +544,7 @@ export async function buyPension720Auto(
     }
 
     const orderNo = await waitForOrderNo(gameFrame, 20000);
+    if (!orderNo) throw new Error("Timed out waiting for Pension720 purchase confirmation.");
     return {
       requestedGameCount: options.gameCount,
       selectedGameCount,

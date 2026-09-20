@@ -1,6 +1,7 @@
 import { constants as cryptoConstants, createPublicKey, publicEncrypt } from "node:crypto";
 import type { BrowserContext } from "playwright";
 import { baseUrl, userAgent } from "./constants.js";
+import { isTransient } from "./purchase-policy.js";
 import type { LoginOptions } from "./types.js";
 
 const debugAuthEnvKey = "LOTTO_DEBUG_AUTH";
@@ -35,9 +36,11 @@ async function withRetries<T>(action: () => Promise<T>, maxRetries: number, retr
     try {
       return await action();
     } catch (error) {
+      if (!isTransient(error)) throw error;
       currentError = error;
       if (attempt < maxRetries) {
-        await sleep(retryDelayMs);
+        console.warn(`[login] attempt ${attempt}/${maxRetries} failed; retrying`);
+        await sleep(retryDelayMs * attempt);
       }
     }
   }
@@ -239,8 +242,8 @@ async function submitLogin(context: BrowserContext, userId: string, userPassword
       await normalizeAuthCookies(context);
       await context.request.get(`${baseUrl}/main`, { headers: buildBaseRequestHeaders() }).catch(() => undefined);
     },
-    5,
-    2000
+    3,
+    10000
   );
 }
 

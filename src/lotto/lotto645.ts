@@ -9,30 +9,6 @@ type BuyRequirements = {
   currentRound: string;
 };
 
-function sleep(delayMs: number): Promise<void> {
-  // 재시도 사이에 짧게 대기하기 위한 유틸 함수.
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
-
-async function withRetries<T>(action: () => Promise<T>, maxRetries: number, retryDelayMs: number): Promise<T> {
-  // 네트워크 일시 장애를 고려해 동일 요청을 재시도한다.
-  // 최종 실패 시 마지막 에러를 그대로 던져 원인 파악이 가능하게 한다.
-  let currentError: unknown;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-    try {
-      return await action();
-    } catch (error) {
-      currentError = error;
-      if (attempt < maxRetries) {
-        await sleep(retryDelayMs);
-      }
-    }
-  }
-
-  throw currentError;
-}
-
 function extractInputValue(html: string, inputId: string): string | null {
   // 서버 HTML에서 숨김 input 값을 추출한다.
   // 속성 순서가 달라질 수 있어 id->value / value->id 패턴을 모두 지원한다.
@@ -94,9 +70,7 @@ async function getBuyRequirements(context: BrowserContext): Promise<BuyRequireme
   // 구매 전 필수 값 조회:
   // 1) ready socket API에서 direct 값 획득
   // 2) game645 페이지에서 추첨일/마감일/현재회차 input 값 추출
-  const readyResponse = await withRetries(
-    () =>
-      context.request.post(`${lotto645Url}/olotto/game/egovUserReadySocket.json`, {
+  const readyResponse = await context.request.post(`${lotto645Url}/olotto/game/egovUserReadySocket.json`, {
         headers: {
           "User-Agent": userAgent,
           Origin: lotto645Url,
@@ -104,10 +78,7 @@ async function getBuyRequirements(context: BrowserContext): Promise<BuyRequireme
           "X-Requested-With": "XMLHttpRequest",
           "Content-Type": "application/x-www-form-urlencoded"
         }
-      }),
-    5,
-    2000
-  );
+      });
 
   if (!readyResponse.ok()) {
     throw new Error(`egovUserReadySocket failed. status=${readyResponse.status()}`);
@@ -167,9 +138,8 @@ export async function buyLotto645Auto(context: BrowserContext, options: BuyLotto
   }
 
   const requirements = await getBuyRequirements(context);
-  const response = await withRetries(
-    () =>
-      context.request.post(`${lotto645Url}/olotto/game/execBuy.do`, {
+  options.onSubmit?.();
+  const response = await context.request.post(`${lotto645Url}/olotto/game/execBuy.do`, {
         headers: {
           "User-Agent": userAgent,
           Origin: lotto645Url,
@@ -186,10 +156,7 @@ export async function buyLotto645Auto(context: BrowserContext, options: BuyLotto
           gameCnt: String(options.gameCount),
           saleMdaDcd: "10"
         }
-      }),
-    5,
-    2000
-  );
+      });
 
   if (!response.ok()) {
     throw new Error(`execBuy failed. status=${response.status()}`);

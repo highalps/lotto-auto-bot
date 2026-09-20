@@ -2,79 +2,73 @@ name: Buy Lotto
 
 on:
   schedule:
-    # GitHub Actions cron is UTC. 04:00 UTC = 13:00 KST.
-    # Thursday: Pension-only run
-    - cron: "0 4 * * 4"
-    # Saturday: Lotto-only run
-    - cron: "0 4 * * 6"
+    # UTC 03:00 = 12:00 KST. Friday pension, Sunday lotto.
+    - cron: "0 3 * * 5"
+    - cron: "0 3 * * 0"
   workflow_dispatch:
+    inputs:
+      target:
+        description: "구매 상품 (수동 실행은 Variables보다 우선)"
+        type: choice
+        required: true
+        default: LOTTO_ONLY
+        options:
+          - LOTTO_ONLY
+          - PENSION_ONLY
+          - BOTH
+      lotto_count:
+        description: "로또 구매 게임수"
+        type: choice
+        default: "5"
+        options: ["1", "2", "3", "4", "5"]
+      pension_count:
+        description: "연금복권 구매 수량 (동일 번호, 서로 다른 조)"
+        type: choice
+        default: "1"
+        options: ["1", "2", "3", "4", "5"]
+
+permissions:
+  contents: read
+
+# Serialize manual and scheduled purchases across branches.
+concurrency:
+  group: lottery-purchases
+  cancel-in-progress: false
 
 jobs:
   buy-lotto:
-    # Manual runs always execute all requested modes by workflow variables.
-    # Thursday schedule runs pension or both/all.
-    # Saturday schedule runs lotto or both/all.
     if: |
       github.event_name != 'schedule' ||
-      (
-        github.event.schedule == '0 4 * * 4' &&
-        (
-          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'PENSION' ||
-          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'PENSION_ONLY' ||
-          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'BOTH' ||
-          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'ALL'
-        )
-      ) ||
-      (
-        github.event.schedule == '0 4 * * 6' &&
-        (
-          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'LOTTO' ||
-          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'LOTTO_ONLY' ||
-          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'BOTH' ||
-          (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'ALL'
-        )
-      )
+      (github.event.schedule == '0 3 * * 5' &&
+       contains(fromJSON('["PENSION", "PENSION_ONLY", "BOTH", "ALL"]'), vars.LOTTO_BUY_MODE || 'LOTTO_ONLY')) ||
+      (github.event.schedule == '0 3 * * 0' &&
+       contains(fromJSON('["LOTTO", "LOTTO_ONLY", "BOTH", "ALL"]'), vars.LOTTO_BUY_MODE || 'LOTTO_ONLY'))
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.15.1
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
+      - name: Type check
+        run: pnpm run check
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
-
       - name: Buy lotto
         run: pnpm run buy
         env:
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
-          LOTTO_BUY_MODE: >
-            ${{ (github.event_name == 'schedule' && github.event.schedule == '0 4 * * 4' && (
-                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'PENSION') ||
-                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'PENSION_ONLY') ||
-                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'BOTH') ||
-                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'ALL')
-               )) && 'PENSION_ONLY' ||
-               (github.event_name == 'schedule' && github.event.schedule == '0 4 * * 6' && (
-                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'LOTTO') ||
-                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'LOTTO_ONLY') ||
-                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'BOTH') ||
-                 ((vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') == 'ALL')
-               )) && 'LOTTO_ONLY' ||
-               (vars.LOTTO_BUY_MODE || 'LOTTO_ONLY') }}
-          LOTTO_COUNT: ${{ vars.LOTTO_COUNT || '5' }}
-          PENSION_COUNT: ${{ vars.PENSION_COUNT || '1' }}
+          LOTTO_BUY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.target || (github.event.schedule == '0 3 * * 5' && 'PENSION_ONLY' || 'LOTTO_ONLY') }}
+          LOTTO_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.lotto_count || vars.LOTTO_COUNT || '5' }}
+          PENSION_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.pension_count || vars.PENSION_COUNT || '1' }}
           PLAYWRIGHT_HEADLESS: "true"

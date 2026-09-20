@@ -6,6 +6,8 @@ import { getUserBalance, loginToDhlottery } from "./lotto/auth.js";
 import { buyLotto645Auto } from "./lotto/lotto645.js";
 import { buyPension720Auto } from "./lotto/pension720.js";
 import { browserFingerprint, userAgent } from "./lotto/constants.js";
+import { selectMyLotteryledger } from "./lotto/ledger.js";
+import { guardedPurchase, purchaseRange, retryRead, type Product } from "./lotto/purchase-policy.js";
 
 type BuyMode = "STOP" | "LOTTO_ONLY" | "PENSION_ONLY" | "BOTH";
 
@@ -121,28 +123,55 @@ async function main(): Promise<void> {
       return;
     }
 
-    await loginToDhlottery(context, { userId, userPassword });
+    await loginToDhlottery(context, { userId, userPassword, validateWithBalance: false });
     let lottoResponse: Awaited<ReturnType<typeof buyLotto645Auto>> | null = null;
     let pensionResponse: Awaited<ReturnType<typeof buyPension720Auto>> | null = null;
+    const statuses: Partial<Record<Product, string>> = {};
+    const hasPurchase = (product: Product) => async () => {
+      const ledger = await selectMyLotteryledger(context, {
+        ...purchaseRange(product), ltGdsCd: product, recordCountPerPage: 1
+      });
+      return ledger.total > 0 || ledger.list.length > 0;
+    };
+    const reportProduct = async (product: Product, status: string) => {
+      statuses[product] = status;
+      await writeGithubSummary(`### ${product === "LO40" ? "로또6/45" : "연금복권720+"}\n- 상태: ${status}\n- ${status === "SKIPPED" ? "이번 구매 주기에 이미 구매한 내역이 있어 건너뜀" : status === "RECOVERED" ? "응답 오류 후 구매내역에서 구매 완료 확인" : "구매 완료"}`);
+    };
 
     if (buyMode === "LOTTO_ONLY" || buyMode === "BOTH") {
-      lottoResponse = await buyLotto645Auto(context, { gameCount: lottoCount });
+      const result = await guardedPurchase({
+        hasPurchase: hasPurchase("LO40"),
+        buy: onSubmit => buyLotto645Auto(context, { gameCount: lottoCount, onSubmit })
+      });
+      lottoResponse = result.response ?? null;
+      await reportProduct("LO40", result.status);
     }
 
     if (buyMode === "PENSION_ONLY" || buyMode === "BOTH") {
-      pensionResponse = await buyPension720Auto(context, { gameCount: pensionCount });
+      const result = await guardedPurchase({
+        hasPurchase: hasPurchase("LP72"),
+        buy: onSubmit => buyPension720Auto(context, { gameCount: pensionCount, onSubmit })
+      });
+      pensionResponse = result.response ?? null;
+      await reportProduct("LP72", result.status);
     }
 
-    const balance = await getUserBalance(context);
+    const balance = await getUserBalance(context).catch(error => {
+      console.warn(`Balance unavailable after purchase: ${String(error)}`);
+      return "조회 불가 (구매 결과에 영향 없음)";
+    });
 
-    await mkdir(dirname(storageStatePath), { recursive: true });
-    await context.storageState({ path: storageStatePath });
+    try {
+      await mkdir(dirname(storageStatePath), { recursive: true });
+      await context.storageState({ path: storageStatePath });
+    } catch (error) { console.warn(`Session storage unavailable: ${String(error)}`); }
 
     const successOutput = {
       success: true,
       buyMode,
-      lottoCount: buyMode === "LOTTO_ONLY" || buyMode === "BOTH" ? lottoCount : null,
-      pensionCount: buyMode === "PENSION_ONLY" || buyMode === "BOTH" ? pensionCount : null,
+      statuses,
+      lottoCount: lottoResponse ? lottoCount : null,
+      pensionCount: pensionResponse ? pensionCount : null,
       balance,
       lottoResultCode: lottoResponse?.result?.resultCode ?? null,
       lottoResultMessage: lottoResponse?.result?.resultMsg ?? null,
@@ -154,10 +183,12 @@ async function main(): Promise<void> {
     await writeGithubSummary(
       [
         "## 구매 실행 결과",
-        "- 상태: SUCCESS (구매 정상 완료)",
+        Object.values(statuses).every(status => status === "SKIPPED")
+          ? "- 상태: SKIPPED (이번 구매 주기에 이미 구매함)"
+          : "- 상태: SUCCESS (상품별 결과 참조)",
         `- LOTTO_BUY_MODE: ${buyMode}`,
-        `- 로또 구매 수량: ${successOutput.lottoCount ?? 0}`,
-        `- 연금복권 구매 수량: ${successOutput.pensionCount ?? 0}`,
+        `- 로또 신규 구매 수량: ${statuses.LO40 === "RECOVERED" ? "구매내역 참조" : successOutput.lottoCount ?? 0}`,
+        `- 연금복권 신규 구매 수량: ${statuses.LP72 === "RECOVERED" ? "구매내역 참조" : successOutput.pensionCount ?? 0}`,
         `- 잔액: ${balance}`,
         `- 로또 응답: ${successOutput.lottoResultCode ?? "-"} / ${successOutput.lottoResultMessage ?? "-"}`,
         `- 연금복권 주문번호: ${successOutput.pensionOrderNo ?? "-"}`
