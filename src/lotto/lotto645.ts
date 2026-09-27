@@ -28,13 +28,17 @@ function extractInputValue(html: string, inputId: string): string | null {
   return null;
 }
 
-function calculateFallbackDrawDate(): string {
-  // HTML 파싱 실패 대비용: "다음 토요일"을 추첨일로 계산한다.
-  const now = new Date();
-  const day = now.getDay();
+function toKstCalendarDate(now: Date): Date {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000);
+}
+
+function calculateFallbackDrawDate(now = new Date()): string {
+  // HTML 파싱 실패 대비용: 한국시간 기준 "다음 토요일"을 추첨일로 계산한다.
+  const kstNow = toKstCalendarDate(now);
+  const day = kstNow.getUTCDay();
   const daysUntilSaturday = (6 - day + 7) % 7;
-  const nextSaturday = new Date(now);
-  nextSaturday.setDate(now.getDate() + daysUntilSaturday);
+  const nextSaturday = new Date(kstNow);
+  nextSaturday.setUTCDate(kstNow.getUTCDate() + daysUntilSaturday);
   return nextSaturday.toISOString().slice(0, 10);
 }
 
@@ -45,25 +49,46 @@ function calculateFallbackDeadlineDate(drawDate: string): string {
   return drawDateObject.toISOString().slice(0, 10);
 }
 
-async function getCurrentRound(context: BrowserContext): Promise<string> {
-  // 메인 페이지의 현재 회차(최근 추첨 회차)를 읽어 +1 하여 구매 대상 회차를 만든다.
-  // 파싱 실패 시 기준일/기준회차 기반으로 주차 계산 fallback을 사용한다.
-  const response = await context.request.get("https://www.dhlottery.co.kr/common.do?method=main", {
-    headers: { "User-Agent": userAgent }
-  });
-  const html = await response.text();
-  const match = html.match(/<strong[^>]*id=["']lottoDrwNo["'][^>]*>(\d+)<\/strong>/i);
+export function calculateFallbackRound(now = new Date()): number {
+  // 1152회 추첨일을 기준으로 판매 회차가 일요일 00:00 KST에 넘어가도록 계산한다.
+  const kstNow = toKstCalendarDate(now);
+  const currentDate = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate());
+  const baseDate = Date.UTC(2024, 11, 28);
+  const days = Math.floor((currentDate - baseDate) / (1000 * 60 * 60 * 24));
+  const weeksSinceBaseRound = Math.max(0, Math.floor((days + 6) / 7));
+  return 1152 + weeksSinceBaseRound;
+}
 
-  if (match?.[1]) {
-    return String(Number(match[1]) + 1);
+export function resolveSalesRound(pageRound: string | null, latestDrawRound: string | null, now = new Date()): string {
+  const candidates = [calculateFallbackRound(now)];
+
+  if (pageRound && /^\d+$/.test(pageRound)) {
+    candidates.push(Number(pageRound));
+  }
+  if (latestDrawRound && /^\d+$/.test(latestDrawRound)) {
+    candidates.push(Number(latestDrawRound) + 1);
   }
 
-  const baseDate = new Date("2024-12-28T00:00:00+09:00");
-  const baseRound = 1152;
-  const today = new Date();
-  const days = Math.floor((today.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
-  const weeks = Math.max(0, Math.floor(days / 7));
-  return String(baseRound + weeks);
+  return String(Math.max(...candidates));
+}
+
+async function getLatestDrawRound(context: BrowserContext): Promise<string | null> {
+  // 메인 페이지에는 최근 추첨이 끝난 회차가 표시된다.
+  try {
+    const response = await context.request.get("https://www.dhlottery.co.kr/common.do?method=main", {
+      headers: { "User-Agent": userAgent }
+    });
+    if (!response.ok()) {
+      return null;
+    }
+
+    const html = await response.text();
+    const match = html.match(/<strong[^>]*id=["']lottoDrwNo["'][^>]*>\s*(\d+)\s*<\/strong>/i);
+    return match?.[1] ?? null;
+  } catch {
+    // 메인 페이지 조회 장애가 구매 페이지/달력 기반 회차 판정을 막지 않게 한다.
+    return null;
+  }
 }
 
 async function getBuyRequirements(context: BrowserContext): Promise<BuyRequirements> {
@@ -105,7 +130,9 @@ async function getBuyRequirements(context: BrowserContext): Promise<BuyRequireme
   const drawDate = extractInputValue(html, "ROUND_DRAW_DATE") ?? calculateFallbackDrawDate();
   const paymentDeadlineDate =
     extractInputValue(html, "WAMT_PAY_TLMT_END_DT") ?? calculateFallbackDeadlineDate(drawDate);
-  const currentRound = extractInputValue(html, "curRound") ?? (await getCurrentRound(context));
+  const pageRound = extractInputValue(html, "curRound");
+  const latestDrawRound = await getLatestDrawRound(context);
+  const currentRound = resolveSalesRound(pageRound, latestDrawRound);
 
   return {
     direct,
