@@ -5,8 +5,8 @@ on:
     # GitHub Actions cron is UTC.
     # Thursday 22:00 KST -> 13:00 UTC
     - cron: "0 13 * * 4"
-    # Saturday 22:00 KST -> 13:00 UTC
-    - cron: "0 13 * * 6"
+    # Sunday 09:00 KST -> 00:00 UTC (after the regular overnight maintenance window)
+    - cron: "0 0 * * 0"
   workflow_dispatch:
     inputs:
       target:
@@ -79,7 +79,7 @@ jobs:
           ISSUE_BODY: ${{ steps.check_result.outputs.issue_body }}
 
   check-lotto365:
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'lotto365' || github.event_name == 'schedule' && github.event.schedule == '0 13 * * 6'
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'lotto365' || github.event_name == 'schedule' && github.event.schedule == '0 0 * * 0'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

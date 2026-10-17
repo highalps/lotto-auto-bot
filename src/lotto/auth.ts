@@ -84,6 +84,36 @@ function rsaEncryptToHex(plainText: string, modulusHex: string, exponentHex: str
   return encrypted.toString("hex");
 }
 
+export function parseRsaKeyResponse(text: string): { modulus: string; exponent: string } {
+  const normalizedText = text.trim();
+  if (/시스템\s*점검|시스템\s*정기\s*점검|system\s*maintenance/i.test(normalizedText)) {
+    // The maintenance page is returned with HTTP 200, so expose it as a transient 503-class error.
+    throw new Error("RSA modulus request failed. status=503 (dhlottery system maintenance page returned).");
+  }
+  if (normalizedText.startsWith("<")) {
+    throw new Error("RSA modulus request returned HTML instead of JSON.");
+  }
+
+  let payload: {
+    data?: { rsaModulus?: string; publicExponent?: string };
+    rsaModulus?: string;
+    publicExponent?: string;
+  };
+  try {
+    payload = JSON.parse(normalizedText) as typeof payload;
+  } catch (error) {
+    throw new Error(`RSA modulus response was not valid JSON: ${String(error)}`);
+  }
+
+  const modulus = payload.data?.rsaModulus ?? payload.rsaModulus;
+  const exponent = payload.data?.publicExponent ?? payload.publicExponent;
+  if (!modulus || !exponent) {
+    throw new Error("RSA modulus/publicExponent not found in response.");
+  }
+
+  return { modulus, exponent };
+}
+
 function buildBaseRequestHeaders(): Record<string, string> {
   return {
     "User-Agent": userAgent,
@@ -117,19 +147,7 @@ async function getRsaKey(context: BrowserContext): Promise<{ modulus: string; ex
     throw new Error(`RSA modulus request failed. status=${response.status()}`);
   }
 
-  const payload = (await response.json()) as {
-    data?: { rsaModulus?: string; publicExponent?: string };
-    rsaModulus?: string;
-    publicExponent?: string;
-  };
-
-  const modulus = payload.data?.rsaModulus ?? payload.rsaModulus;
-  const exponent = payload.data?.publicExponent ?? payload.publicExponent;
-  if (!modulus || !exponent) {
-    throw new Error("RSA modulus/publicExponent not found in response.");
-  }
-
-  return { modulus, exponent };
+  return parseRsaKeyResponse(await response.text());
 }
 
 async function submitLoginViaPageFlow(context: BrowserContext, userId: string, userPassword: string): Promise<void> {
