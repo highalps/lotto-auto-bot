@@ -47,7 +47,7 @@ jobs:
        contains(fromJSON('["PENSION", "PENSION_ONLY", "BOTH", "ALL"]'), vars.LOTTO_BUY_MODE || 'LOTTO_ONLY')) ||
       (github.event.schedule == '0 3 * * 0' &&
        contains(fromJSON('["LOTTO", "LOTTO_ONLY", "BOTH", "ALL"]'), vars.LOTTO_BUY_MODE || 'LOTTO_ONLY'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - name: Checkout
