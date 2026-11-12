@@ -114,39 +114,29 @@ pnpm run buy
 6. 주간 체크 실행
 
 ```bash
-pnpm run check:weekly
+pnpm run check:weekly --config config/report.json --profile lotto-weekly
 ```
 
-## 4) 로컬 환경변수(.env)
+연금복권은 `--profile pension-weekly` 옵션을 사용합니다.
+
+## 4) 로컬 인증정보와 브라우저 옵션(.env)
 
 ```env
 # 필수
 LOTTO_USER_ID=your_id
 LOTTO_USER_PASSWORD=your_password
 
-# 이번 실행 대상. 구매 활성화·수량·번호는 JSON에서 관리
-LOTTO_BUY_MODE=LOTTO_ONLY
-PURCHASE_CONFIG_PATH=config/report.json
-
 # Playwright
 PLAYWRIGHT_HEADLESS=true
 PLAYWRIGHT_STORAGE_STATE_PATH=.auth/storage-state.json
-
-# 주간 체크 대상
-# lotto365 | pension
-# legacy aliases: LO40 | LP72
-CHECK_TARGET=lotto365
-
-# 선택: 기간 강제 지정(YYYYMMDD)
-# CHECK_FROM_YMD=20260208
-# CHECK_TO_YMD=20260214
-
-# 선택: 조회·리포트 JSON 설정과 프로필
-# 파일의 target을 사용하려면 위 CHECK_TARGET을 주석 처리하세요.
-# CHECK_CONFIG_PATH=config/report.example.json
-# CHECK_PROFILE=weekly
-# CHECK_RESULT_PATH=./report-result.json
 ```
+
+구매·조회 설정용 환경변수는 `.env`에 넣지 않아도 됩니다. `pnpm run buy`는 자동으로
+`config/report.json`을 읽고 JSON에서 활성화된 상품 전체를 실행합니다. 조회는 위 예시처럼
+`--config`와 `--profile`을 명령에 지정합니다. 아이디·비밀번호는 JSON에 넣지 않습니다.
+
+다른 설정 파일을 사용하거나 이번 구매 실행의 대상만 제한해야 하는 고급 사용 사례에서는
+각각 `PURCHASE_CONFIG_PATH`, `LOTTO_BUY_MODE`를 일회성 환경변수로 지정할 수 있습니다.
 
 <a id="report-config"></a>
 
@@ -156,7 +146,8 @@ CHECK_TARGET=lotto365
 추가 패키지 없이 JSON을 검증하고, 알 수 없는 키나 잘못된 조합은 조회 전에 오류로 처리합니다.
 
 [config/report.example.json](config/report.example.json)을 참고해 설정 파일을 작성합니다.
-파일은 자동 탐색하지 않으며 `--config` 또는 `CHECK_CONFIG_PATH`로 명시합니다.
+조회 명령에서는 파일을 자동 탐색하지 않으며 `--config` 또는 `CHECK_CONFIG_PATH`로 명시합니다.
+구매 명령은 기본적으로 `config/report.json`을 자동으로 읽습니다.
 
 **기존 환경변수에서 전환하기**
 
@@ -190,7 +181,7 @@ CHECK_TARGET=lotto365
     "lotto645": {
       "enabled": true,
       "games": [
-        { "mode": "manual", "numbers": [3, 11, 19, 27, 34, 42] },
+        { "mode": "manual", "numbers": [3, 7, 8, 11, 22, 25] },
         { "mode": "auto", "count": 4 }
       ]
     },

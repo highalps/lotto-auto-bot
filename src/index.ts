@@ -57,7 +57,11 @@ async function main(): Promise<void> {
   const userId = process.env.LOTTO_USER_ID?.trim();
   const userPassword = process.env.LOTTO_USER_PASSWORD?.trim();
   const purchaseConfig = await loadPurchaseConfig();
-  const buyMode = readBuyMode(process.env.LOTTO_BUY_MODE);
+  // JSON 설정에서는 활성화된 상품 전체가 기본 실행 대상이다.
+  // 예약/수동 Actions는 LOTTO_BUY_MODE로 이번 실행 대상만 제한한다.
+  const buyMode = readBuyMode(
+    process.env.LOTTO_BUY_MODE ?? (purchaseConfig.source === "file" ? "BOTH" : undefined)
+  );
   const dryRun = readDryRun(process.env.LOTTO_DRY_RUN);
   const runLotto = purchaseConfig.enabled && purchaseConfig.lotto645.enabled &&
     (buyMode === "LOTTO_ONLY" || buyMode === "BOTH");

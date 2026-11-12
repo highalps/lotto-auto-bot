@@ -12,7 +12,7 @@
     "lotto645": {
       "enabled": true,
       "games": [
-        { "mode": "manual", "numbers": [3, 11, 19, 27, 34, 42] },
+        { "mode": "manual", "numbers": [3, 7, 8, 11, 22, 25] },
         { "mode": "auto", "count": 4 }
       ]
     },
