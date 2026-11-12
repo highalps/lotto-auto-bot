@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { parsePurchaseSection, PurchaseConfigError } from "./purchase-config.js";
 
 export class ReportConfigError extends Error {
   constructor(message: string) {
@@ -95,8 +96,17 @@ function settings(value: unknown, label: string): Settings {
 
 function parseFile(value: unknown): ConfigFile {
   const record = object(value, "config");
-  keys(record, ["version", "defaults", "profiles", "defaultProfile"], "config");
-  if (record.version !== 1) fail("config.version must be 1.");
+  keys(record, ["version", "defaults", "profiles", "defaultProfile", "purchase"], "config");
+  if (record.version !== 1 && record.version !== 2) fail("config.version must be 1 or 2.");
+  if ("purchase" in record) {
+    if (record.version !== 2) fail("config.version must be 2 when purchase is present.");
+    try {
+      parsePurchaseSection(record.purchase);
+    } catch (error) {
+      if (error instanceof PurchaseConfigError) fail(error.message);
+      throw error;
+    }
+  }
   const profiles = new Map<string, Settings>();
   if ("profiles" in record) {
     for (const [name, value] of Object.entries(object(record.profiles, "profiles"))) {

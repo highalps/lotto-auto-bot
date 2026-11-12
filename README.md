@@ -2,7 +2,7 @@
 
 동행복권 자동 구매/주간 당첨 확인 봇입니다.  
 
-조회·리포트는 **JSON 설정 파일 + 프로필**로 관리할 수 있습니다.
+조회·리포트와 구매 구성은 **`config/report.json`**으로 관리할 수 있습니다.
 [조회 설정 빠른 시작](#report-config)에서 설정 파일 예시, 환경변수에서 전환하는 방법,
 로그인 없는 미리보기 명령을 확인하세요. 기존 환경변수 방식도 계속 지원합니다.
 
@@ -15,28 +15,21 @@
 3. 아래 경로에서 값들을 등록합니다.
 
 - Secrets 설정 화면: `https://github.com/<OWNER>/<REPO>/settings/secrets/actions`
-- Variables 설정 화면: `https://github.com/<OWNER>/<REPO>/settings/variables/actions`
 - GitHub 공식 가이드(Secrets): `https://docs.github.com/en/actions/security-guides/encrypted-secrets`
-- GitHub 공식 가이드(Variables): `https://docs.github.com/en/actions/learn-github-actions/variables`
 
 직접 클릭 경로:
 - 저장소 `Settings` -> `Secrets and variables` -> `Actions`
 - `Secrets` 탭에서 민감정보 등록
-- `Variables` 탭에서 일반 설정값 등록
 
 ### 1-1) 꼭 만들어야 하는 Secrets
 
 - `LOTTO_USER_ID`: 동행복권 아이디
 - `LOTTO_USER_PASSWORD`: 동행복권 비밀번호
 
-### 1-2) 꼭 만들어야 하는 Variables
+### 1-2) 구매 설정
 
-아래 Variables는 구매 기능용입니다. 주간 조회만 사용하는 경우에는 필요하지 않습니다.
-현재 `Check Weekly Winning` 워크플로우는 조회 대상과 결과 파일 경로를 자체 지정합니다.
-
-- `LOTTO_BUY_MODE`: `STOP` | `LOTTO_ONLY` | `PENSION_ONLY` | `BOTH`
-- `LOTTO_COUNT`: 로또 구매 수량(최대 5)
-- `PENSION_COUNT`: 연금복권 구매 수량
+GitHub Actions Variables는 필요하지 않습니다. 구매 활성화 여부, 게임 수, 수동 번호는
+[`config/report.json`](config/report.json)의 `purchase`에서 관리합니다. 아이디와 비밀번호만 Secrets에 둡니다.
 
 ### 1-3) 실행 방법
 
@@ -44,8 +37,7 @@
 2. `Buy Lotto` 또는 `Check Weekly Winning` 워크플로우 선택
 3. `Run workflow` 클릭
    - `target`: `LOTTO_ONLY`, `PENSION_ONLY`, `BOTH` 선택
-   - `lotto_count`, `pension_count`: 각 상품별 구매 수량(1~5) 선택
-   - 수동 입력은 Variables보다 우선합니다. 자동 실행은 기존 Variables를 사용합니다.
+   - `target`: 이번 실행 대상만 선택합니다. 실제 구매 구성은 JSON을 사용합니다.
    - `dry_run` 체크: 로그인 및 구매내역 조회 후 상품별 구매 예정 수량·예상 금액·스킵 여부만 확인합니다. 번호 선택이나 결제는 실행하지 않습니다.
    - dry-run 기본값은 꺼짐이며 예약 실행은 기존대로 실제 구매합니다. 로컬에서는 `LOTTO_DRY_RUN=true pnpm run buy` (PowerShell: `$env:LOTTO_DRY_RUN='true'; pnpm run buy`)로 실행합니다. 로컬 실제 구매 전에는 해당 환경변수를 제거하거나 `false`로 변경하세요.
    - dry-run도 로그인 Secrets가 필요하며, 조회 실패 시 오류로 종료합니다. 이미 구매한 상품은 예정 수량과 금액에서 제외됩니다. 잔액·번호 재고 확인이나 예약은 수행하지 않습니다.
@@ -132,14 +124,9 @@ pnpm run check:weekly
 LOTTO_USER_ID=your_id
 LOTTO_USER_PASSWORD=your_password
 
-# 구매 모드
-# STOP | LOTTO_ONLY | PENSION_ONLY | BOTH
-# aliases: NONE | LOTTO | PENSION | ALL
+# 이번 실행 대상. 구매 활성화·수량·번호는 JSON에서 관리
 LOTTO_BUY_MODE=LOTTO_ONLY
-
-# 구매 수량(각 1~5)
-LOTTO_COUNT=5
-PENSION_COUNT=1
+PURCHASE_CONFIG_PATH=config/report.json
 
 # Playwright
 PLAYWRIGHT_HEADLESS=true
@@ -163,10 +150,9 @@ CHECK_TARGET=lotto365
 
 <a id="report-config"></a>
 
-### 조회·리포트 설정 파일과 프로필
+### 조회·리포트 및 구매 설정 파일
 
-`check:weekly`는 기존 환경변수 외에 JSON 설정 파일도 지원합니다.
-이 설정은 조회·리포트 전용이며 구매 명령에는 적용되지 않습니다.
+`check:weekly`의 조회 프로필과 `buy`의 구매 구성을 한 JSON 파일에서 관리합니다.
 추가 패키지 없이 JSON을 검증하고, 알 수 없는 키나 잘못된 조합은 조회 전에 오류로 처리합니다.
 
 [config/report.example.json](config/report.example.json)을 참고해 설정 파일을 작성합니다.
@@ -179,12 +165,13 @@ CHECK_TARGET=lotto365
 3. `CHECK_CONFIG_PATH`로 파일을 지정하고, 필요하면 `CHECK_PROFILE`로 프로필을 선택합니다.
 4. `pnpm run config:preview`로 최종 값과 `sources`를 확인합니다.
 
-인증정보는 기존 Secrets/환경변수에 유지합니다. 파일 설정은 조회·리포트에만 적용되며,
-수동·자동 혼합 구매나 추가 구매 시나리오를 구현한 변경은 아닙니다.
+인증정보는 기존 Secrets/환경변수에 유지합니다. `purchase`가 있는 version 2 파일에서는
+구매 설정 전체를 JSON에서 읽습니다. `purchase`가 없는 version 1 파일만 기존
+`LOTTO_BUY_MODE`, `LOTTO_COUNT`, `PENSION_COUNT` 환경변수 방식으로 동작합니다.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "defaults": {
     "target": "lotto365",
     "range": { "days": 7 }
@@ -197,8 +184,29 @@ CHECK_TARGET=lotto365
       "range": { "from": "20260101", "to": "20260131" },
       "resultPath": "./report-result.json"
     }
+  },
+  "purchase": {
+    "enabled": true,
+    "lotto645": {
+      "enabled": true,
+      "games": [
+        { "mode": "manual", "numbers": [3, 11, 19, 27, 34, 42] },
+        { "mode": "auto", "count": 4 }
+      ]
+    },
+    "pension720": { "enabled": false, "count": 1 }
   }
 }
+```
+
+위 예시는 수동 1게임과 자동 4게임을 한 요청으로 구매합니다. 수동 번호는 1~45의 서로 다른
+정수 6개여야 하며, 로또 전체 게임 수는 1~5여야 합니다. `purchase.enabled`는 전체 구매,
+상품별 `enabled`는 해당 상품만 중지합니다. 잘못된 JSON은 환경변수 구매로 대체하지 않고 종료합니다.
+
+로그인이나 브라우저 없이 구매 계획을 확인할 수 있습니다.
+
+```bash
+pnpm run purchase:preview
 ```
 
 로그인·브라우저·네트워크 요청 없이 최종 설정을 확인합니다. 결과 파일도 생성하지 않습니다.
@@ -222,7 +230,8 @@ pnpm run check:weekly --config config/report.example.json --profile pension-week
 
 | 명령 | 역할 | 로그인 필요 |
 |---|---|---|
-| `pnpm run config:preview` | 설정 검증과 최종 값 출력 | 아니요 |
+| `pnpm run config:preview` | 조회 설정 검증과 최종 값 출력 | 아니요 |
+| `pnpm run purchase:preview` | 구매 설정·수량·예상 금액 출력 | 아니요 |
 | `pnpm run check:weekly` | 설정을 적용한 내역·당첨 조회 | 예 |
 | `pnpm run check` | TypeScript 타입 검사 | 아니요 |
 | `pnpm test` | 테스트 실행 | 아니요 |
@@ -253,13 +262,13 @@ pnpm run check:weekly --config config/report.example.json --profile pension-week
 `CHECK_TARGET`은 워크플로우에서 지정하지 않으므로 파일의 대상이 적용됩니다.
 `CHECK_RESULT_PATH`는 후속 결과 읽기 단계와 경로를 맞추기 위해 워크플로우에서 지정합니다.
 프로필의 조회 기간을 바꾸려면 `config/report.json`을 수정하세요.
-이 파일은 구매 명령에 적용되지 않습니다.
+구매 Actions도 같은 파일의 `purchase`를 사용합니다. 예약일과 headless 실행 여부는 워크플로우에 유지됩니다.
 
 ## 5) 기능 요약
 
 - 로그인: Playwright로 `https://www.dhlottery.co.kr/login` 실제 입력/로그인
 - 구매:
-- 로또6/45 자동 구매
+- 로또6/45 수동·자동 혼합 구매(한 요청, 최대 5게임)
 - 연금복권720+ 자동 구매
 - 모드 제어: 멈춤/로또만/연금만/둘다
 - 당첨 체크:

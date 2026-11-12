@@ -82,7 +82,7 @@ test("a partial CLI range cannot silently combine with environment dates", async
 });
 
 test("strict file validation includes unused profiles", async () => {
-  for (const value of [null, [], { version: 2 }, { version: 1, password: "secret" },
+  for (const value of [null, [], { version: 3 }, { version: 1, password: "secret" },
     { version: 1, defaults: { taget: "lotto365" } },
     { version: 1, defaults: { range: { days: 0 } } },
     { version: 1, defaults: { range: { days: "7" } } },
@@ -95,6 +95,24 @@ test("strict file validation includes unused profiles", async () => {
       await assert.rejects(loadReportConfig({ cwd, env: { CHECK_TARGET: "lotto365" }, argv: ["--config", "report.json"] }), ReportConfigError);
     });
   }
+});
+
+test("version 2 report config accepts and validates purchase settings", async () => {
+  const value = {
+    version: 2,
+    defaults: { target: "lotto365" },
+    purchase: {
+      enabled: true,
+      lotto645: { enabled: true, games: [{ mode: "auto", count: 5 }] },
+      pension720: { enabled: false, count: 1 }
+    }
+  };
+  await withFile(value, async (cwd) => {
+    assert.equal((await loadReportConfig({ cwd, argv: ["--config", "report.json"], env: {}, now })).target, "LO40");
+  });
+  await withFile({ ...value, purchase: { ...value.purchase, lotto645: { enabled: true, games: [] } } }, async (cwd) => {
+    await assert.rejects(loadReportConfig({ cwd, argv: ["--config", "report.json"], env: {}, now }), ReportConfigError);
+  });
 });
 
 test("missing target, missing profile, unknown/repeated/missing arguments fail", async () => {

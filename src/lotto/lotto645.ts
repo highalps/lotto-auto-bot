@@ -1,6 +1,6 @@
 import type { BrowserContext } from "playwright";
 import { lotto645Url, lottoSlots, userAgent } from "./constants.js";
-import type { BuyLottoOptions, BuyLottoResponse } from "./types.js";
+import type { BuyLottoAutoOptions, BuyLottoOptions, BuyLottoResponse, LottoGame } from "./types.js";
 
 type BuyRequirements = {
   direct: string;
@@ -142,27 +142,38 @@ async function getBuyRequirements(context: BrowserContext): Promise<BuyRequireme
   };
 }
 
-function buildAutoPickParam(gameCount: number): string {
-  // 자동번호 구매 파라미터를 Python 원본과 동일한 구조(JSON 문자열)로 생성한다.
-  // A~E 슬롯 중 구매 매수만큼 사용한다.
-  const entries = lottoSlots.slice(0, gameCount).map((slot) => ({
-    genType: "0",
-    arrGameChoiceNum: null,
-    alpabet: slot
+function validateGames(games: LottoGame[]): void {
+  if (!Array.isArray(games) || games.length < 1 || games.length > 5) {
+    throw new Error("Lotto games must contain between 1 and 5 games.");
+  }
+  games.forEach((game, index) => {
+    if (game.mode === "auto") return;
+    if (game.mode !== "manual" || !Array.isArray(game.numbers) || game.numbers.length !== 6 ||
+      game.numbers.some((number) => !Number.isSafeInteger(number) || number < 1 || number > 45) ||
+      new Set(game.numbers).size !== 6) {
+      throw new Error(`Manual lotto game ${index + 1} must contain 6 unique integers between 1 and 45.`);
+    }
+  });
+}
+
+export function buildLottoPickParam(games: LottoGame[]): string {
+  validateGames(games);
+  const entries = games.map((game, index) => ({
+    genType: game.mode === "auto" ? "0" : "1",
+    arrGameChoiceNum: game.mode === "auto" ? null : [...game.numbers].sort((a, b) => a - b).join(","),
+    alpabet: lottoSlots[index]
   }));
 
   return JSON.stringify(entries);
 }
 
-export async function buyLotto645Auto(context: BrowserContext, options: BuyLottoOptions): Promise<BuyLottoResponse> {
-  // 로또 자동구매 메인 함수:
+export async function buyLotto645(context: BrowserContext, options: BuyLottoOptions): Promise<BuyLottoResponse> {
+  // 로또 수동/자동 혼합구매 메인 함수:
   // - 입력 검증(1~5장)
   // - 구매 요구값 조회
   // - execBuy 호출
   // - 응답의 로그인/성공 여부 검증
-  if (!Number.isInteger(options.gameCount) || options.gameCount < 1 || options.gameCount > 5) {
-    throw new Error("LOTTO_COUNT must be an integer between 1 and 5.");
-  }
+  validateGames(options.games);
 
   const requirements = await getBuyRequirements(context);
   options.onSubmit?.();
@@ -176,11 +187,11 @@ export async function buyLotto645Auto(context: BrowserContext, options: BuyLotto
         form: {
           round: requirements.currentRound,
           direct: requirements.direct,
-          nBuyAmount: String(options.gameCount * 1000),
-          param: buildAutoPickParam(options.gameCount),
+          nBuyAmount: String(options.games.length * 1000),
+          param: buildLottoPickParam(options.games),
           ROUND_DRAW_DATE: requirements.drawDate,
           WAMT_PAY_TLMT_END_DT: requirements.paymentDeadlineDate,
-          gameCnt: String(options.gameCount),
+          gameCnt: String(options.games.length),
           saleMdaDcd: "10"
         }
       });
@@ -198,4 +209,15 @@ export async function buyLotto645Auto(context: BrowserContext, options: BuyLotto
   }
 
   return payload;
+}
+
+/** Backward-compatible wrapper for callers that still provide only an automatic game count. */
+export function buyLotto645Auto(context: BrowserContext, options: BuyLottoAutoOptions): Promise<BuyLottoResponse> {
+  if (!Number.isInteger(options.gameCount) || options.gameCount < 1 || options.gameCount > 5) {
+    throw new Error("LOTTO_COUNT must be an integer between 1 and 5.");
+  }
+  return buyLotto645(context, {
+    games: Array.from({ length: options.gameCount }, (): LottoGame => ({ mode: "auto" })),
+    onSubmit: options.onSubmit
+  });
 }

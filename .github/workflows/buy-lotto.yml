@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       target:
-        description: "구매 상품 (수동 실행은 Variables보다 우선)"
+        description: "이번 실행 대상 (구매 구성은 config/report.json 사용)"
         type: choice
         required: true
         default: LOTTO_ONLY
@@ -20,16 +20,6 @@ on:
           - LOTTO_ONLY
           - PENSION_ONLY
           - BOTH
-      lotto_count:
-        description: "로또 구매 게임수"
-        type: choice
-        default: "5"
-        options: ["1", "2", "3", "4", "5"]
-      pension_count:
-        description: "연금복권 구매 수량 (동일 번호, 서로 다른 조)"
-        type: choice
-        default: "1"
-        options: ["1", "2", "3", "4", "5"]
 
 permissions:
   contents: read
@@ -41,12 +31,6 @@ concurrency:
 
 jobs:
   buy-lotto:
-    if: |
-      github.event_name != 'schedule' ||
-      (github.event.schedule == '0 3 * * 5' &&
-       contains(fromJSON('["PENSION", "PENSION_ONLY", "BOTH", "ALL"]'), vars.LOTTO_BUY_MODE || 'LOTTO_ONLY')) ||
-      (github.event.schedule == '0 3 * * 0' &&
-       contains(fromJSON('["LOTTO", "LOTTO_ONLY", "BOTH", "ALL"]'), vars.LOTTO_BUY_MODE || 'LOTTO_ONLY'))
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -73,7 +57,6 @@ jobs:
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
           LOTTO_BUY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.target || (github.event.schedule == '0 3 * * 5' && 'PENSION_ONLY' || 'LOTTO_ONLY') }}
-          LOTTO_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.lotto_count || vars.LOTTO_COUNT || '5' }}
-          PENSION_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.pension_count || vars.PENSION_COUNT || '1' }}
+          PURCHASE_CONFIG_PATH: config/report.json
           PLAYWRIGHT_HEADLESS: "true"
           LOTTO_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}

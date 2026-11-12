@@ -5,9 +5,18 @@ export type LoginOptions = {
 };
 
 export type BuyLottoOptions = {
+  games: LottoGame[];
+  onSubmit?: () => void;
+};
+
+export type BuyLottoAutoOptions = {
   gameCount: number;
   onSubmit?: () => void;
 };
+
+export type LottoGame =
+  | { mode: "auto" }
+  | { mode: "manual"; numbers: number[] };
 
 export type BuyLottoResponse = {
   loginYn?: string;
