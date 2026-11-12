@@ -5,67 +5,7 @@ import { loginToDhlottery } from "./lotto/auth.js";
 import { getPurchasedGameCount, selectMyLotteryledger, type LedgerItem } from "./lotto/ledger.js";
 import { browserFingerprint, userAgent } from "./lotto/constants.js";
 
-type CheckTarget = "LO40" | "LP72";
-
-function toYmdInKst(date: Date): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(date);
-  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
-  const month = parts.find((part) => part.type === "month")?.value ?? "01";
-  const day = parts.find((part) => part.type === "day")?.value ?? "01";
-  return `${year}${month}${day}`;
-}
-
-function subtractDays(date: Date, days: number): Date {
-  const target = new Date(date);
-  target.setDate(target.getDate() - days);
-  return target;
-}
-
-function readTargetEnv(): CheckTarget {
-  const raw = (process.env.CHECK_TARGET ?? "").trim().toLowerCase();
-  if (raw === "lotto365" || raw === "lotto645" || raw === "lotto" || raw === "lo40") {
-    return "LO40";
-  }
-  if (raw === "pension" || raw === "pension720" || raw === "lp72") {
-    return "LP72";
-  }
-  throw new Error(
-    "CHECK_TARGET must be lotto365 or pension. (legacy aliases: LO40, LP72, LOTTO645, LOTTO, PENSION720)"
-  );
-}
-
-function isValidYmd(value: string): boolean {
-  return /^\d{8}$/.test(value);
-}
-
-function readRangeEnv(now: Date): { fromYmd: string; toYmd: string } {
-  const fromRaw = process.env.CHECK_FROM_YMD?.trim();
-  const toRaw = process.env.CHECK_TO_YMD?.trim();
-
-  if (!fromRaw && !toRaw) {
-    return {
-      fromYmd: toYmdInKst(subtractDays(now, 7)),
-      toYmd: toYmdInKst(now)
-    };
-  }
-
-  if (!fromRaw || !toRaw) {
-    throw new Error("CHECK_FROM_YMD and CHECK_TO_YMD must be provided together.");
-  }
-  if (!isValidYmd(fromRaw) || !isValidYmd(toRaw)) {
-    throw new Error("CHECK_FROM_YMD and CHECK_TO_YMD must be in YYYYMMDD format.");
-  }
-  if (fromRaw > toRaw) {
-    throw new Error("CHECK_FROM_YMD must be less than or equal to CHECK_TO_YMD.");
-  }
-
-  return { fromYmd: fromRaw, toYmd: toRaw };
-}
+import { loadReportConfig, ReportConfigError, type CheckTarget } from "./report-config.js";
 
 function parseAmount(value: number | null | undefined): number {
   if (!Number.isFinite(value ?? NaN)) {
@@ -107,13 +47,7 @@ function errorMessage(error: unknown): string {
 }
 
 function isConfigError(error: unknown): boolean {
-  const message = errorMessage(error);
-  return (
-    message.includes("CHECK_TARGET must be lotto365 or pension") ||
-    message.includes("Missing LOTTO_USER_ID or LOTTO_USER_PASSWORD") ||
-    message.includes("CHECK_FROM_YMD and CHECK_TO_YMD") ||
-    message.includes("CHECK_FROM_YMD must be less than or equal to CHECK_TO_YMD")
-  );
+  return error instanceof ReportConfigError || errorMessage(error).includes("Missing LOTTO_USER_ID or LOTTO_USER_PASSWORD");
 }
 
 function formatWonAmount(item: LedgerItem): string {
@@ -180,8 +114,7 @@ async function writeGithubSummary(markdown: string): Promise<void> {
   await appendFile(summaryPath, `${markdown}\n`, "utf8");
 }
 
-async function writeCheckResultFile(payload: unknown): Promise<void> {
-  const resultPath = process.env.CHECK_RESULT_PATH?.trim();
+async function writeCheckResultFile(payload: unknown, resultPath?: string): Promise<void> {
   if (!resultPath) {
     return;
   }
@@ -191,14 +124,11 @@ async function writeCheckResultFile(payload: unknown): Promise<void> {
 async function main(): Promise<void> {
   const userId = process.env.LOTTO_USER_ID?.trim();
   const userPassword = process.env.LOTTO_USER_PASSWORD?.trim();
-  const target = readTargetEnv();
+  const { target, fromYmd, toYmd, resultPath } = await loadReportConfig({ argv: process.argv.slice(2) });
 
   if (!userId || !userPassword) {
     throw new Error("Missing LOTTO_USER_ID or LOTTO_USER_PASSWORD in environment variables.");
   }
-
-  const now = new Date();
-  const { fromYmd, toYmd } = readRangeEnv(now);
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -250,7 +180,7 @@ async function main(): Promise<void> {
       })
     };
     console.log(JSON.stringify(output, null, 2));
-    await writeCheckResultFile(output);
+    await writeCheckResultFile(output, resultPath);
 
     await writeGithubSummary(output.summaryMarkdown);
   } finally {

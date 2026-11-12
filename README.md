@@ -146,6 +146,78 @@ CHECK_TARGET=lotto365
 # CHECK_TO_YMD=20260214
 ```
 
+### 조회·리포트 설정 파일과 프로필
+
+`check:weekly`는 기존 환경변수 외에 JSON 설정 파일도 지원합니다.
+이 설정은 조회·리포트 전용이며 구매 명령에는 적용되지 않습니다.
+추가 패키지 없이 JSON을 검증하고, 알 수 없는 키나 잘못된 조합은 조회 전에 오류로 처리합니다.
+
+`config/report.example.json`을 참고해 설정 파일을 작성합니다.
+파일은 자동 탐색하지 않으며 `--config` 또는 `CHECK_CONFIG_PATH`로 명시합니다.
+
+```json
+{
+  "version": 1,
+  "defaults": {
+    "target": "lotto365",
+    "range": { "days": 7 }
+  },
+  "defaultProfile": "weekly",
+  "profiles": {
+    "weekly": {},
+    "pension-weekly": { "target": "pension" },
+    "archive": {
+      "range": { "from": "20260101", "to": "20260131" },
+      "resultPath": "./report-result.json"
+    }
+  }
+}
+```
+
+로그인·브라우저·네트워크 요청 없이 최종 설정을 확인합니다. 결과 파일도 생성하지 않습니다.
+인증정보는 필요 없으며 출력에도 포함되지 않습니다.
+
+```bash
+pnpm run config:preview --config config/report.example.json
+pnpm run config:preview --config config/report.example.json --profile pension-weekly
+pnpm run config:preview --config config/report.example.json --profile archive --from 20260201 --to 20260228
+```
+
+검증한 설정으로 조회할 때는 같은 인자를 `check:weekly`에 전달합니다.
+조회 실행에는 기존 로그인 Secrets가 필요합니다.
+
+```bash
+pnpm run check:weekly --config config/report.example.json --profile pension-weekly
+```
+
+설정 우선순위(뒤쪽이 우선): **내장 기본값 → 파일 defaults → 선택한 프로필 → 환경변수 → 실행 옵션**.
+미리보기의 `sources` 필드에서 각 값의 출처를 확인할 수 있습니다.
+
+| 설정 | 환경변수 | 실행 옵션 |
+|---|---|---|
+| 설정 파일 | `CHECK_CONFIG_PATH` | `--config` |
+| 프로필 | `CHECK_PROFILE` | `--profile` |
+| 조회 대상 | `CHECK_TARGET` | `--target` |
+| 시작일 | `CHECK_FROM_YMD` | `--from` |
+| 종료일 | `CHECK_TO_YMD` | `--to` |
+| 결과 JSON 경로 | `CHECK_RESULT_PATH` | `--result-path` |
+
+- 프로필 선택 순서는 `--profile` → `CHECK_PROFILE` → 파일의 `defaultProfile`입니다.
+- 파일이나 프로필을 지정하지 않으면 기존 환경변수 방식으로 동작합니다. 대상은 반드시 지정해야 합니다.
+- 기존 `.env`의 `CHECK_TARGET`도 프로필보다 우선합니다. 파일로 옮긴 설정의 환경변수는 제거하거나, 실행 옵션으로 명시적으로 덮어쓰세요.
+- `range`는 전체 교체하며 부분 병합하지 않습니다. `days`와 `from`/`to`를 함께 지정할 수 없습니다.
+- `days`는 1~3660의 정수입니다. `7`은 기존과 동일하게 KST 오늘에서 7일 전부터 오늘까지의 날짜 범위입니다(양 끝 포함).
+- 고정 기간은 실제 달력에 존재하는 `YYYYMMDD` 날짜여야 합니다. 시작일과 종료일은 같은 출처에서 한 쌍으로 지정해야 합니다.
+- 빈 환경변수는 미지정으로 취급합니다. JSON의 `null`이나 빈 문자열은 설정 삭제가 아니라 오류입니다.
+- 설정 파일과 결과 파일의 상대 경로는 모두 **명령을 실행한 디렉터리** 기준입니다. 결과 파일의 부모 디렉터리는 미리 존재해야 합니다.
+- 사용하지 않는 프로필도 검증합니다. 오타, 지원하지 않는 버전, 없는 프로필, 읽을 수 없는 파일은 오류로 종료합니다.
+- 비밀번호·토큰은 JSON에 넣지 않고 기존 Secrets/환경변수로 유지합니다.
+
+기존 주간 조회 Actions는 수정 없이 동작합니다. Actions에서 파일 설정을 사용하려면
+조회 단계의 명령에 `--config`와 필요한 `--profile`을 추가하세요.
+워크플로우에 이미 지정된 `CHECK_TARGET`, `CHECK_RESULT_PATH`는 계속 파일보다 우선하며,
+결과 파일 경로는 후속 결과 읽기 단계의 경로와 일치해야 합니다.
+
 ## 5) 기능 요약
 
 - 로그인: Playwright로 `https://www.dhlottery.co.kr/login` 실제 입력/로그인

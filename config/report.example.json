@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "defaults": {
+    "target": "lotto365",
+    "range": { "days": 7 }
+  },
+  "defaultProfile": "weekly",
+  "profiles": {
+    "weekly": {},
+    "pension-weekly": { "target": "pension" },
+    "archive": {
+      "range": { "from": "20260101", "to": "20260131" },
+      "resultPath": "./report-result.json"
+    }
+  }
+}
