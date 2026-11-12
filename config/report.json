@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "defaults": {
+    "range": { "days": 7 }
+  },
+  "profiles": {
+    "lotto-weekly": { "target": "lotto365" },
+    "pension-weekly": { "target": "pension" }
+  }
+}

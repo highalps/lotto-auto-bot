@@ -49,9 +49,8 @@ jobs:
 
       - name: Check Pension weekly winning
         id: check_weekly
-        run: pnpm run check:weekly
+        run: pnpm run check:weekly --config config/report.json --profile pension-weekly
         env:
-          CHECK_TARGET: "pension"
           CHECK_RESULT_PATH: "./check-weekly-result-pension.json"
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}
@@ -104,9 +103,8 @@ jobs:
 
       - name: Check Lotto365 weekly winning
         id: check_weekly
-        run: pnpm run check:weekly
+        run: pnpm run check:weekly --config config/report.json --profile lotto-weekly
         env:
-          CHECK_TARGET: "lotto365"
           CHECK_RESULT_PATH: "./check-weekly-result-lotto365.json"
           LOTTO_USER_ID: ${{ secrets.LOTTO_USER_ID }}
           LOTTO_USER_PASSWORD: ${{ secrets.LOTTO_USER_PASSWORD }}

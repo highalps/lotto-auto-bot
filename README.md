@@ -247,10 +247,13 @@ pnpm run check:weekly --config config/report.example.json --profile pension-week
 - 사용하지 않는 프로필도 검증합니다. 오타, 지원하지 않는 버전, 없는 프로필, 읽을 수 없는 파일은 오류로 종료합니다.
 - 비밀번호·토큰은 JSON에 넣지 않고 기존 Secrets/환경변수로 유지합니다.
 
-기존 주간 조회 Actions는 수정 없이 동작합니다. Actions에서 파일 설정을 사용하려면
-조회 단계의 명령에 `--config`와 필요한 `--profile`을 추가하세요.
-워크플로우에 이미 지정된 `CHECK_TARGET`, `CHECK_RESULT_PATH`는 계속 파일보다 우선하며,
-결과 파일 경로는 후속 결과 읽기 단계의 경로와 일치해야 합니다.
+주간 조회 Actions는 [config/report.json](config/report.json)을 사용합니다.
+기존 cron 시간(연금복권 목요일 22:00 KST, 로또 토요일 22:00 KST)은 그대로이며,
+각 잡에서 `pension-weekly`, `lotto-weekly` 프로필을 선택합니다.
+`CHECK_TARGET`은 워크플로우에서 지정하지 않으므로 파일의 대상이 적용됩니다.
+`CHECK_RESULT_PATH`는 후속 결과 읽기 단계와 경로를 맞추기 위해 워크플로우에서 지정합니다.
+프로필의 조회 기간을 바꾸려면 `config/report.json`을 수정하세요.
+이 파일은 구매 명령에 적용되지 않습니다.
 
 ## 5) 기능 요약
 
