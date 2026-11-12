@@ -2,6 +2,10 @@
 
 동행복권 자동 구매/주간 당첨 확인 봇입니다.  
 
+조회·리포트는 **JSON 설정 파일 + 프로필**로 관리할 수 있습니다.
+[조회 설정 빠른 시작](#report-config)에서 설정 파일 예시, 환경변수에서 전환하는 방법,
+로그인 없는 미리보기 명령을 확인하세요. 기존 환경변수 방식도 계속 지원합니다.
+
 ## 1) GitHub Actions로만 사용하는 방법 (권장)
 
 로컬 개발 환경(Node.js, pnpm) 없이도 사용할 수 있습니다.
@@ -26,6 +30,9 @@
 - `LOTTO_USER_PASSWORD`: 동행복권 비밀번호
 
 ### 1-2) 꼭 만들어야 하는 Variables
+
+아래 Variables는 구매 기능용입니다. 주간 조회만 사용하는 경우에는 필요하지 않습니다.
+현재 `Check Weekly Winning` 워크플로우는 조회 대상과 결과 파일 경로를 자체 지정합니다.
 
 - `LOTTO_BUY_MODE`: `STOP` | `LOTTO_ONLY` | `PENSION_ONLY` | `BOTH`
 - `LOTTO_COUNT`: 로또 구매 수량(최대 5)
@@ -90,6 +97,8 @@
 - pnpm
 - 동행복권 계정
 
+설정 미리보기(`config:preview`)만 실행할 때는 계정과 브라우저 설치가 필요하지 않습니다.
+
 1. 저장소 clone
 2. 의존성 설치
 
@@ -144,7 +153,15 @@ CHECK_TARGET=lotto365
 # 선택: 기간 강제 지정(YYYYMMDD)
 # CHECK_FROM_YMD=20260208
 # CHECK_TO_YMD=20260214
+
+# 선택: 조회·리포트 JSON 설정과 프로필
+# 파일의 target을 사용하려면 위 CHECK_TARGET을 주석 처리하세요.
+# CHECK_CONFIG_PATH=config/report.example.json
+# CHECK_PROFILE=weekly
+# CHECK_RESULT_PATH=./report-result.json
 ```
+
+<a id="report-config"></a>
 
 ### 조회·리포트 설정 파일과 프로필
 
@@ -152,8 +169,18 @@ CHECK_TARGET=lotto365
 이 설정은 조회·리포트 전용이며 구매 명령에는 적용되지 않습니다.
 추가 패키지 없이 JSON을 검증하고, 알 수 없는 키나 잘못된 조합은 조회 전에 오류로 처리합니다.
 
-`config/report.example.json`을 참고해 설정 파일을 작성합니다.
+[config/report.example.json](config/report.example.json)을 참고해 설정 파일을 작성합니다.
 파일은 자동 탐색하지 않으며 `--config` 또는 `CHECK_CONFIG_PATH`로 명시합니다.
+
+**기존 환경변수에서 전환하기**
+
+1. 조회 대상과 기간 등 반복 사용하는 값을 JSON의 `defaults` 또는 `profiles`로 옮깁니다.
+2. `.env`에서 옮긴 `CHECK_TARGET`, `CHECK_FROM_YMD`, `CHECK_TO_YMD`, `CHECK_RESULT_PATH`를 제거하거나 주석 처리합니다. 셸에 설정한 같은 환경변수도 확인하세요.
+3. `CHECK_CONFIG_PATH`로 파일을 지정하고, 필요하면 `CHECK_PROFILE`로 프로필을 선택합니다.
+4. `pnpm run config:preview`로 최종 값과 `sources`를 확인합니다.
+
+인증정보는 기존 Secrets/환경변수에 유지합니다. 파일 설정은 조회·리포트에만 적용되며,
+수동·자동 혼합 구매나 추가 구매 시나리오를 구현한 변경은 아닙니다.
 
 ```json
 {
@@ -193,6 +220,13 @@ pnpm run check:weekly --config config/report.example.json --profile pension-week
 설정 우선순위(뒤쪽이 우선): **내장 기본값 → 파일 defaults → 선택한 프로필 → 환경변수 → 실행 옵션**.
 미리보기의 `sources` 필드에서 각 값의 출처를 확인할 수 있습니다.
 
+| 명령 | 역할 | 로그인 필요 |
+|---|---|---|
+| `pnpm run config:preview` | 설정 검증과 최종 값 출력 | 아니요 |
+| `pnpm run check:weekly` | 설정을 적용한 내역·당첨 조회 | 예 |
+| `pnpm run check` | TypeScript 타입 검사 | 아니요 |
+| `pnpm test` | 테스트 실행 | 아니요 |
+
 | 설정 | 환경변수 | 실행 옵션 |
 |---|---|---|
 | 설정 파일 | `CHECK_CONFIG_PATH` | `--config` |
@@ -229,8 +263,23 @@ pnpm run check:weekly --config config/report.example.json --profile pension-week
 - 주간 구매내역 조회
 - 구매 없으면 스킵 표시
 - 당첨 여부/당첨금 합계 표시
+- 조회·리포트 JSON 설정, 이름 있는 프로필, 실행 옵션 지원
+- 로그인 없는 설정 검증·미리보기 및 값의 출처 표시
 
 ## 6) 트러블슈팅
+
+조회 설정 관련 문제:
+
+| 증상 | 확인할 내용 |
+|---|---|
+| 프로필을 바꿔도 대상이 그대로임 | `sources.target`을 확인하고, 프로필보다 우선하는 `CHECK_TARGET` 또는 `--target`을 확인합니다. |
+| `Missing report target` | 파일의 `target`, `CHECK_TARGET`, `--target` 중 하나를 지정합니다. |
+| `Cannot read report config file` | 실행 디렉터리 기준으로 설정 파일 경로가 맞는지 확인합니다. |
+| `Selected profile does not exist` | 선택한 이름이 파일의 `profiles`에 있는지 확인합니다. |
+| `from/to must be provided together` | 시작일과 종료일을 같은 출처에서 함께 지정합니다. |
+| `contains an unsupported key` | 오류에 표시된 허용 키와 JSON의 철자를 비교합니다. |
+
+로그인·서비스 관련 문제:
 
 - `Login failed: 아이디 또는 비밀번호가 일치하지 않습니다.`
 - 아이디/비밀번호 오입력 확인
